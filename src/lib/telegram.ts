@@ -28,6 +28,11 @@ export function getTelegramUser(): TelegramUser | null {
   return null
 }
 
+export function getTelegramStartParam(): string | null {
+  const twa = getTelegramWebApp() as { initDataUnsafe?: { start_param?: string } } | null
+  return twa?.initDataUnsafe?.start_param ?? null
+}
+
 export function hapticFeedback(type: 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error' = 'light') {
   const twa = getTelegramWebApp() as {
     HapticFeedback?: {
@@ -70,6 +75,17 @@ export function shareToTelegram(url: string, text?: string) {
   } else {
     window.open(shareUrl, '_blank')
   }
+}
+
+export function shareBattleToTelegram(challengeId: string, fallbackUrl: string, text?: string) {
+  const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '')
+  const appName = process.env.NEXT_PUBLIC_TELEGRAM_APP_NAME
+  const startParam = `battle_${challengeId}`
+  const miniAppUrl = botUsername && appName
+    ? `https://t.me/${botUsername}/${appName}?startapp=${encodeURIComponent(startParam)}`
+    : fallbackUrl
+
+  shareToTelegram(miniAppUrl, text)
 }
 
 export function expandApp() {

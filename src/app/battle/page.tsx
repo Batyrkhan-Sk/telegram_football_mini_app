@@ -9,7 +9,7 @@ import { useUserStore, useBattleStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
 import { PlayerCard } from '@/components/cards/PlayerCard'
 import { SectionHeader, LoadingSpinner, Badge } from '@/components/ui'
-import { shareToTelegram, hapticFeedback } from '@/lib/telegram'
+import { shareBattleToTelegram, hapticFeedback } from '@/lib/telegram'
 import type { UserCard, BattleResult } from '@/types'
 
 const MOCK_OPPONENTS = [
@@ -75,7 +75,11 @@ export default function BattlePage() {
       }).then((r) => r.json()),
     onSuccess: (res) => {
       if (res.data?.shareUrl) {
-        shareToTelegram(res.data.shareUrl, '⚽ I challenge you to a FC Kairat card battle! Can you beat me?')
+        shareBattleToTelegram(
+          res.data.challengeId,
+          res.data.shareUrl,
+          '⚽ I challenge you to a FC Kairat card battle! Can you beat me?'
+        )
       }
     },
   })

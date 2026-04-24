@@ -7,7 +7,7 @@ import { AlertTriangle, ArrowLeft, Share2, Swords } from 'lucide-react'
 import { useUserStore } from '@/store'
 import { LoadingSpinner } from '@/components/ui'
 import { PlayerCard } from '@/components/cards/PlayerCard'
-import { shareToTelegram } from '@/lib/telegram'
+import { shareBattleToTelegram } from '@/lib/telegram'
 import { formatXP } from '@/lib/utils'
 import type { BattleResult, Challenge, UserCard } from '@/types'
 
@@ -240,7 +240,7 @@ export default function BattleDetailPage() {
 
         {isOwn && (
           <button
-            onClick={() => shareToTelegram(shareUrl, 'I challenge you to a FC Kairat card battle!')}
+            onClick={() => shareBattleToTelegram(id, shareUrl, 'I challenge you to a FC Kairat card battle!')}
             className="w-full flex items-center justify-center gap-2 bg-surface-3 border border-white/8 font-display font-700 uppercase py-3 rounded-2xl"
           >
             <Share2 size={16} />

@@ -2,8 +2,9 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useUserStore } from '@/store'
-import { getTelegramUser, expandApp } from '@/lib/telegram'
+import { getTelegramUser, getTelegramStartParam, expandApp } from '@/lib/telegram'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -13,6 +14,7 @@ const queryClient = new QueryClient({
 
 function UserInitializer({ children }: { children: React.ReactNode }) {
   const { setUser, setLoading } = useUserStore()
+  const router = useRouter()
   const initialized = useRef(false)
 
   useEffect(() => {
@@ -32,6 +34,11 @@ function UserInitializer({ children }: { children: React.ReactNode }) {
       }
 
       if (cancelled) return
+
+      const startParam = getTelegramStartParam()
+      if (startParam?.startsWith('battle_')) {
+        router.replace(`/battle/${startParam.slice('battle_'.length)}`)
+      }
 
       if (!tgUser) {
         setLoading(false)
@@ -62,7 +69,7 @@ function UserInitializer({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [setUser, setLoading])
+  }, [router, setUser, setLoading])
 
   return <>{children}</>
 }
