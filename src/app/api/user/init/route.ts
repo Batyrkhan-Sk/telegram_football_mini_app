@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { xpToLevel } from '@/lib/battle/engine'
-import { ensureStarterCard } from '@/lib/starter-card'
+import { ensureStarterCards } from '@/lib/starter-card'
 
 const InitSchema = z.object({
   telegramId: z.string(),
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    await ensureStarterCard(user.id)
+    await ensureStarterCards(user.id)
 
     // Recalculate level from XP
     if (user.profile) {

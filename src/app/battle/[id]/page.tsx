@@ -14,7 +14,7 @@ import type { BattleResult, Challenge, UserCard } from '@/types'
 export default function BattleDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const { user } = useUserStore()
+  const { user, isLoading: isUserLoading } = useUserStore()
   const [selectedCards, setSelectedCards] = useState<UserCard[]>([])
   const [result, setResult] = useState<BattleResult | null>(null)
   const [error, setError] = useState('')
@@ -29,10 +29,15 @@ export default function BattleDetailPage() {
   const isOwn = challenge?.senderId === user?.id
   const maxCards = challenge?.format === 'THREE_V_THREE' ? 3 : 1
 
-  const { data: cardsData } = useQuery<{ data: UserCard[] }>({
+  const { data: cardsData, isLoading: isCardsLoading, isFetching: isCardsFetching, error: cardsError } = useQuery<{ data: UserCard[] }>({
     queryKey: ['cards', user?.telegramId],
-    queryFn: () => fetch(`/api/cards?telegramId=${user?.telegramId}`).then((r) => r.json()),
-    enabled: !!user?.telegramId && !!challenge && !isOwn && challenge.status === 'PENDING',
+    queryFn: async () => {
+      const response = await fetch(`/api/cards?telegramId=${user?.telegramId}`)
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? 'Failed to load cards')
+      return payload
+    },
+    enabled: !isUserLoading && !!user?.telegramId && !!challenge && !isOwn && challenge.status === 'PENDING',
   })
 
   const availableCards = (cardsData?.data ?? []).filter((card) => !card.isExhausted && !card.isOnCooldown)
@@ -69,7 +74,7 @@ export default function BattleDetailPage() {
     onError: () => setError('Failed to accept challenge. Try again.'),
   })
 
-  if (isLoading) {
+  if (isLoading || isUserLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size={32} />
@@ -86,6 +91,16 @@ export default function BattleDetailPage() {
         <button onClick={() => router.push('/battle')} className="bg-brand text-black font-display font-800 uppercase px-6 py-3 rounded-xl">
           Create New Battle
         </button>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-4 text-center">
+        <div className="text-5xl">⚽</div>
+        <h1 className="font-display font-900 text-2xl uppercase">Open In Telegram</h1>
+        <p className="text-gray-400 text-sm">Join this challenge from the Telegram mini app so we can load your starter cards.</p>
       </div>
     )
   }
@@ -175,7 +190,20 @@ export default function BattleDetailPage() {
                 Select Cards ({selectedCards.length}/{maxCards})
               </p>
 
-              {availableCards.length === 0 ? (
+              {isCardsLoading || isCardsFetching ? (
+                <div className="flex items-center gap-3 bg-surface-2 border border-white/8 rounded-xl px-3 py-3">
+                  <LoadingSpinner size={16} />
+                  <p className="text-sm font-display font-700 text-gray-300">Loading your starter cards...</p>
+                </div>
+              ) : cardsError ? (
+                <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-3">
+                  <AlertTriangle size={16} className="text-red-400" />
+                  <div>
+                    <p className="text-sm font-display font-700 text-red-400">Could not load cards</p>
+                    <p className="text-[10px] text-gray-400">Close and reopen the challenge from Telegram</p>
+                  </div>
+                </div>
+              ) : availableCards.length === 0 ? (
                 <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-3">
                   <AlertTriangle size={16} className="text-red-400" />
                   <div>

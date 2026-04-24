@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { resolveSingleBattle, resolveTeamBattle, xpToLevel } from '@/lib/battle/engine'
 import { CARD_ENERGY } from '@/config/game'
-import { ensureStarterCard } from '@/lib/starter-card'
+import { ensureStarterCards } from '@/lib/starter-card'
 import type { Card, UserCard } from '@/types'
 
 const CreateChallengeSchema = z.object({
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { telegramId: input.telegramId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    await ensureStarterCard(user.id)
+    await ensureStarterCards(user.id)
 
     const challenge = await prisma.challenge.create({
       data: {
@@ -109,6 +109,8 @@ export async function PATCH(req: NextRequest) {
     }
 
     const maxCards = challenge.format === 'ONE_V_ONE' ? 1 : 3
+    await ensureStarterCards(receiver.id, maxCards)
+
     if (input.selectedUserCardIds.length !== maxCards) {
       return NextResponse.json({ error: `Select ${maxCards} card${maxCards > 1 ? 's' : ''}` }, { status: 400 })
     }
