@@ -1,26 +1,73 @@
 'use client'
 
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Share2 } from 'lucide-react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { AlertTriangle, ArrowLeft, Share2, Swords } from 'lucide-react'
 import { useUserStore } from '@/store'
 import { LoadingSpinner } from '@/components/ui'
+import { PlayerCard } from '@/components/cards/PlayerCard'
 import { shareToTelegram } from '@/lib/telegram'
 import { formatXP } from '@/lib/utils'
+import type { BattleResult, Challenge, UserCard } from '@/types'
 
 export default function BattleDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { user } = useUserStore()
+  const [selectedCards, setSelectedCards] = useState<UserCard[]>([])
+  const [result, setResult] = useState<BattleResult | null>(null)
+  const [error, setError] = useState('')
 
-  // Try challenge lookup first (deep link flow)
-  const { data: challengeData, isLoading } = useQuery({
+  const { data: challengeData, isLoading } = useQuery<{ data?: Challenge; error?: string }>({
     queryKey: ['challenge', id],
     queryFn: () => fetch(`/api/challenge?id=${id}`).then((r) => r.json()),
     enabled: !!id,
   })
 
   const challenge = challengeData?.data
+  const isOwn = challenge?.senderId === user?.id
+  const maxCards = challenge?.format === 'THREE_V_THREE' ? 3 : 1
+
+  const { data: cardsData } = useQuery<{ data: UserCard[] }>({
+    queryKey: ['cards', user?.telegramId],
+    queryFn: () => fetch(`/api/cards?telegramId=${user?.telegramId}`).then((r) => r.json()),
+    enabled: !!user?.telegramId && !!challenge && !isOwn && challenge.status === 'PENDING',
+  })
+
+  const availableCards = (cardsData?.data ?? []).filter((card) => !card.isExhausted && !card.isOnCooldown)
+  const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/battle/${id}`
+
+  const toggleCard = (card: UserCard) => {
+    setSelectedCards((current) => {
+      if (current.some((selected) => selected.id === card.id)) {
+        return current.filter((selected) => selected.id !== card.id)
+      }
+      if (current.length >= maxCards) return current
+      return [...current, card]
+    })
+  }
+
+  const { mutate: acceptChallenge, isPending: isAccepting } = useMutation({
+    mutationFn: () =>
+      fetch(`/api/challenge?id=${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegramId: user?.telegramId,
+          selectedUserCardIds: selectedCards.map((card) => card.id),
+        }),
+      }).then((r) => r.json()),
+    onMutate: () => setError(''),
+    onSuccess: (res) => {
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setResult(res.data)
+    },
+    onError: () => setError('Failed to accept challenge. Try again.'),
+  })
 
   if (isLoading) {
     return (
@@ -43,8 +90,44 @@ export default function BattleDetailPage() {
     )
   }
 
-  const isOwn = challenge.senderId === user?.id
-  const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/battle/${id}`
+  if (result) {
+    const won = result.winnerId === user?.id
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-4 gap-6 text-center">
+        <div>
+          <div className="text-7xl mb-2">⚽</div>
+          <h1 className="font-display font-900 text-4xl uppercase text-brand">Match Over</h1>
+          <p className={`font-display font-800 text-2xl uppercase mt-1 ${won ? 'text-green-400' : 'text-red-400'}`}>
+            {result.isDraw ? 'Draw' : won ? 'You Win!' : 'You Lose'}
+          </p>
+        </div>
+
+        <div className="bg-surface-2 border border-white/8 rounded-2xl p-4 w-full">
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="text-center bg-surface-3 rounded-xl p-3">
+              <p className="font-display font-900 text-2xl text-gray-400">{result.player1Power.toFixed(1)}</p>
+              <p className="text-[10px] text-gray-400 uppercase">Challenger</p>
+            </div>
+            <div className="text-center bg-surface-3 rounded-xl p-3">
+              <p className="font-display font-900 text-2xl text-brand">{result.player2Power.toFixed(1)}</p>
+              <p className="text-[10px] text-gray-400 uppercase">Your Power</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-400">
+            XP gained: +{won || result.isDraw ? result.xpGained : Math.floor(result.xpGained / 2)}
+          </p>
+        </div>
+
+        <button
+          onClick={() => router.push('/')}
+          className="w-full bg-brand text-black font-display font-800 uppercase py-3 rounded-xl"
+        >
+          Home
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col min-h-screen pb-8 px-4">
@@ -86,17 +169,50 @@ export default function BattleDetailPage() {
         </div>
 
         {challenge.status === 'PENDING' && !isOwn && (
-          <button
-            onClick={() => router.push('/battle')}
-            className="w-full bg-brand text-black font-display font-800 uppercase text-lg py-4 rounded-2xl"
-          >
-            Accept Challenge →
-          </button>
+          <div className="w-full space-y-4">
+            <div className="text-left">
+              <p className="text-[11px] font-display uppercase text-gray-400 mb-2">
+                Select Cards ({selectedCards.length}/{maxCards})
+              </p>
+
+              {availableCards.length === 0 ? (
+                <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-3">
+                  <AlertTriangle size={16} className="text-red-400" />
+                  <div>
+                    <p className="text-sm font-display font-700 text-red-400">No available cards</p>
+                    <p className="text-[10px] text-gray-400">Open cards or scan a QR to restore energy</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {availableCards.map((card) => {
+                    const selected = selectedCards.some((selectedCard) => selectedCard.id === card.id)
+                    return (
+                      <div key={card.id} onClick={() => toggleCard(card)}>
+                        <PlayerCard userCard={card} selected={selected} compact />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {error && <p className="text-red-400 text-sm font-display font-700 text-center">{error}</p>}
+
+            <button
+              onClick={() => acceptChallenge()}
+              disabled={selectedCards.length !== maxCards || isAccepting}
+              className="w-full flex items-center justify-center gap-2 bg-brand text-black font-display font-800 uppercase text-lg py-4 rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isAccepting ? <LoadingSpinner size={18} /> : <Swords size={18} />}
+              {selectedCards.length < maxCards ? `Select ${maxCards - selectedCards.length} card${maxCards - selectedCards.length > 1 ? 's' : ''}` : 'Accept Challenge'}
+            </button>
+          </div>
         )}
 
         {isOwn && (
           <button
-            onClick={() => shareToTelegram(shareUrl, '⚽ I challenge you to a FC Kairat card battle!')}
+            onClick={() => shareToTelegram(shareUrl, 'I challenge you to a FC Kairat card battle!')}
             className="w-full flex items-center justify-center gap-2 bg-surface-3 border border-white/8 font-display font-700 uppercase py-3 rounded-2xl"
           >
             <Share2 size={16} />

@@ -8,188 +8,166 @@ datasource db {
 }
 
 model User {
-  id              String   @id @default(cuid())
-  telegramId      String   @unique
-  username        String?
-  firstName       String?
-  lastName        String?
-  avatarUrl       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  profile         PlayerProfile?
-  userCards       UserCard[]
-  characters      Character[]
-  battlesAsP1     Battle[]         @relation("BattlePlayer1")
-  battlesAsP2     Battle[]         @relation("BattlePlayer2")
-  challengesSent  Challenge[]      @relation("ChallengeSender")
-  challengesRecv  Challenge[]      @relation("ChallengeReceiver")
-  redemptions     PromoRedemption[]
+  id             String            @id @default(cuid())
+  telegramId     String            @unique
+  username       String?
+  firstName      String?
+  lastName       String?
+  avatarUrl      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  battlesAsP1    Battle[]          @relation("BattlePlayer1")
+  battlesAsP2    Battle[]          @relation("BattlePlayer2")
+  challengesRecv Challenge[]       @relation("ChallengeReceiver")
+  challengesSent Challenge[]       @relation("ChallengeSender")
+  characters     Character[]
+  profile        PlayerProfile?
+  redemptions    PromoRedemption[]
+  userCards      UserCard[]
 }
 
 model PlayerProfile {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  xp              Int      @default(0)
-  level           Int      @default(1)
-  coins           Int      @default(50)
-  battlesPlayed   Int      @default(0)
-  battlesWon      Int      @default(0)
-  qrScansUsed     Int      @default(0)
-  arSessionsPlayed Int     @default(0)
-
-  arCooldownEnd   DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  xp               Int       @default(0)
+  level            Int       @default(1)
+  coins            Int       @default(50)
+  battlesPlayed    Int       @default(0)
+  battlesWon       Int       @default(0)
+  qrScansUsed      Int       @default(0)
+  arSessionsPlayed Int       @default(0)
+  arCooldownEnd    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Card {
-  id          String      @id @default(cuid())
-  playerName  String
-  rarity      CardRarity  @default(COMMON)
-  club        String      @default("FC Kairat")
-  position    Position
-  imageUrl    String
-  isCustom    Boolean     @default(false)
-
-  speed       Int
-  shot        Int
-  dribbling   Int
-  physical    Int
-  defense     Int
-
-  createdAt   DateTime    @default(now())
-
-  userCards   UserCard[]
+  id         String     @id @default(cuid())
+  playerName String
+  rarity     CardRarity @default(COMMON)
+  club       String     @default("FC Kairat")
+  position   Position
+  imageUrl   String
+  isCustom   Boolean    @default(false)
+  speed      Int
+  shot       Int
+  dribbling  Int
+  physical   Int
+  defense    Int
+  createdAt  DateTime   @default(now())
+  userCards  UserCard[]
 }
 
 model UserCard {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cardId          String
-  card            Card      @relation(fields: [cardId], references: [id])
-
-  energy          Int       @default(100)
-  maxEnergy       Int       @default(100)
-  cooldownEndAt   DateTime?
-  timesUsed       Int       @default(0)
-
-  acquiredAt      DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
+  id                 String              @id @default(cuid())
+  userId             String
+  cardId             String
+  energy             Int                 @default(100)
+  maxEnergy          Int                 @default(100)
+  cooldownEndAt      DateTime?
+  timesUsed          Int                 @default(0)
+  acquiredAt         DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   battleParticipants BattleParticipant[]
+  card               Card                @relation(fields: [cardId], references: [id])
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, cardId])
 }
 
 model Character {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  nickname        String
-  hairstyle       String    @default("style1")
-  faceType        String    @default("face1")
-  skinTone        String    @default("tone2")
-  jerseyStyle     String    @default("jersey1")
-  dominantAttr    String    @default("speed")
-  animeMode       Boolean   @default(false)
-
-  speed           Int       @default(65)
-  shot            Int       @default(65)
-  dribbling       Int       @default(65)
-  physical        Int       @default(65)
-  defense         Int       @default(65)
-
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  nickname     String
+  hairstyle    String   @default("style1")
+  faceType     String   @default("face1")
+  skinTone     String   @default("tone2")
+  jerseyStyle  String   @default("jersey1")
+  dominantAttr String   @default("speed")
+  animeMode    Boolean  @default(false)
+  speed        Int      @default(65)
+  shot         Int      @default(65)
+  dribbling    Int      @default(65)
+  physical     Int      @default(65)
+  defense      Int      @default(65)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Battle {
-  id              String        @id @default(cuid())
-  player1Id       String
-  player1         User          @relation("BattlePlayer1", fields: [player1Id], references: [id])
-  player2Id       String?
-  player2         User?         @relation("BattlePlayer2", fields: [player2Id], references: [id])
-
-  format          BattleFormat  @default(ONE_V_ONE)
-  status          BattleStatus  @default(PENDING)
-  winnerId        String?
-
-  player1Power    Float?
-  player2Power    Float?
-
-  xpGained        Int           @default(0)
-  coinsGained     Int           @default(0)
-  resultSummary   String?
-
-  participants    BattleParticipant[]
-  challenge       Challenge?
-
-  createdAt       DateTime      @default(now())
-  resolvedAt      DateTime?
+  id            String              @id @default(cuid())
+  player1Id     String
+  player2Id     String?
+  format        BattleFormat        @default(ONE_V_ONE)
+  status        BattleStatus        @default(PENDING)
+  winnerId      String?
+  player1Power  Float?
+  player2Power  Float?
+  xpGained      Int                 @default(0)
+  coinsGained   Int                 @default(0)
+  resultSummary String?
+  createdAt     DateTime            @default(now())
+  resolvedAt    DateTime?
+  player1       User                @relation("BattlePlayer1", fields: [player1Id], references: [id])
+  player2       User?               @relation("BattlePlayer2", fields: [player2Id], references: [id])
+  participants  BattleParticipant[]
+  challenge     Challenge?
 }
 
 model BattleParticipant {
-  id          String    @id @default(cuid())
-  battleId    String
-  battle      Battle    @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  userCardId  String
-  userCard    UserCard  @relation(fields: [userCardId], references: [id])
-  playerId    String
-  slot        Int       @default(1)
-
+  id           String   @id @default(cuid())
+  battleId     String
+  userCardId   String
+  playerId     String
+  slot         Int      @default(1)
   energyBefore Int
   energyAfter  Int
+  battle       Battle   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  userCard     UserCard @relation(fields: [userCardId], references: [id])
 }
 
 model Challenge {
-  id              String          @id @default(cuid())
-  senderId        String
-  sender          User            @relation("ChallengeSender", fields: [senderId], references: [id])
-  receiverId      String?
-  receiver        User?           @relation("ChallengeReceiver", fields: [receiverId], references: [id])
-
-  battleId        String?         @unique
-  battle          Battle?         @relation(fields: [battleId], references: [id])
-
-  format          BattleFormat    @default(ONE_V_ONE)
-  status          ChallengeStatus @default(PENDING)
-  deepLinkToken   String          @unique @default(cuid())
-
-  expiresAt       DateTime
-  createdAt       DateTime        @default(now())
-  acceptedAt      DateTime?
+  id            String          @id @default(cuid())
+  senderId      String
+  receiverId    String?
+  battleId      String?         @unique
+  format        BattleFormat    @default(ONE_V_ONE)
+  status        ChallengeStatus @default(PENDING)
+  deepLinkToken String          @unique @default(cuid())
+  expiresAt     DateTime
+  createdAt     DateTime        @default(now())
+  acceptedAt    DateTime?
+  battle        Battle?         @relation(fields: [battleId], references: [id])
+  receiver      User?           @relation("ChallengeReceiver", fields: [receiverId], references: [id])
+  sender        User            @relation("ChallengeSender", fields: [senderId], references: [id])
 }
 
 model PromoCode {
-  id          String    @id @default(cuid())
-  code        String    @unique
+  id          String            @id @default(cuid())
+  code        String            @unique
   rewardType  RewardType
-  rewardValue Int       @default(0)
+  rewardValue Int               @default(0)
   campaign    String?
-  maxUses     Int       @default(1)
-  usedCount   Int       @default(0)
-  isActive    Boolean   @default(true)
+  maxUses     Int               @default(1)
+  usedCount   Int               @default(0)
+  isActive    Boolean           @default(true)
   expiresAt   DateTime?
-  createdAt   DateTime  @default(now())
-
+  createdAt   DateTime          @default(now())
   redemptions PromoRedemption[]
 }
 
 model PromoRedemption {
-  id          String    @id @default(cuid())
+  id          String     @id @default(cuid())
   userId      String
-  user        User      @relation(fields: [userId], references: [id])
   codeId      String
-  code        PromoCode @relation(fields: [codeId], references: [id])
   rewardType  RewardType
   rewardValue Int
   appliedTo   String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime   @default(now())
+  code        PromoCode  @relation(fields: [codeId], references: [id])
+  user        User       @relation(fields: [userId], references: [id])
 }
 
 enum CardRarity {
