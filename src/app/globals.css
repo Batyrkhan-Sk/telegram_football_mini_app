@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --color-brand: #F5C518;
+  --color-accent: #C8102E;
+  --color-surface-0: #0A0A0A;
+  --color-surface-1: #111111;
+  --color-surface-2: #1A1A1A;
+  --color-surface-3: #222222;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--color-surface-0);
+  color: white;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+/* Telegram safe area */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+.safe-top { padding-top: env(safe-area-inset-top, 0px); }
+
+/* Card shine effect */
+.card-shine {
+  position: relative;
+  overflow: hidden;
+}
+.card-shine::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -60%;
+  width: 30%;
+  height: 200%;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(255,255,255,0.06) 50%,
+    transparent 100%
+  );
+  transform: skewX(-15deg);
+  animation: shine 4s ease-in-out infinite;
+}
+@keyframes shine {
+  0% { left: -60%; }
+  60%, 100% { left: 130%; }
+}
+
+/* Legendary pulse */
+.legendary-glow {
+  box-shadow: 0 0 20px rgba(245, 197, 24, 0.4), 0 0 40px rgba(245, 197, 24, 0.1);
+  animation: legendaryPulse 2s ease-in-out infinite;
+}
+@keyframes legendaryPulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(245,197,24,0.3), 0 0 30px rgba(245,197,24,0.1); }
+  50% { box-shadow: 0 0 25px rgba(245,197,24,0.6), 0 0 50px rgba(245,197,24,0.2); }
+}
+
+/* Energy bar */
+.energy-bar {
+  background: linear-gradient(90deg, #F5C518, #D4A017);
+  transition: width 0.5s ease;
+}
+.energy-bar-low {
+  background: linear-gradient(90deg, #C8102E, #991010);
+}
+
+/* Pitch texture */
+.pitch-bg {
+  background-color: #1a3a1a;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 30px,
+    rgba(255,255,255,0.03) 30px,
+    rgba(255,255,255,0.03) 32px
+  );
+}
+
+/* Bottom nav */
+.bottom-nav {
+  background: linear-gradient(to top, rgba(10,10,10,0.99) 0%, rgba(10,10,10,0.95) 100%);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Snickers brand strip */
+.snickers-strip {
+  background: linear-gradient(90deg, #C8102E 0%, #991020 50%, #C8102E 100%);
+}
+
+@layer utilities {
+  .font-display { font-family: var(--font-display); }
+  .text-brand { color: #F5C518; }
+  .text-accent { color: #C8102E; }
+  .bg-brand { background-color: #F5C518; }
+}
