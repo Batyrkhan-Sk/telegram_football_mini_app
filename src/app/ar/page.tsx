@@ -46,7 +46,6 @@ function GoalNet({ onShoot }: { onShoot: (zone: string) => void }) {
       {/* Goalkeeper */}
       <motion.div
         className="absolute text-3xl"
-        style={{ bottom: '5%' }}
         animate={{
           x: ['0%', '30%', '-30%', '15%', '-15%', '0%'],
           transition: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
@@ -67,7 +66,7 @@ export default function ArPage() {
   const qc = useQueryClient()
   const [phase, setPhase] = useState<Phase>('idle')
   const [goalsScored, setGoalsScored] = useState(0)
-  const [shotsLeft, setShotsLeft] = useState(AR_MODE.SHOTS_PER_SESSION)
+  const [shotsLeft, setShotsLeft] = useState<number>(AR_MODE.SHOTS_PER_SESSION)
   const [lastShot, setLastShot] = useState<ShotResult>(null)
   const [shotHistory, setShotHistory] = useState<ShotResult[]>([])
   const [sessionResult, setSessionResult] = useState<{ success: boolean; xpGained: number; coinsGained: number } | null>(null)

@@ -8,6 +8,7 @@ import { useUserStore, useCharacterStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
 import { StatBar, SectionHeader, LoadingSpinner, Badge } from '@/components/ui'
 import { hapticFeedback } from '@/lib/telegram'
+import type { CharacterDraft } from '@/store'
 import type { Character } from '@/types'
 
 // ─── Asset options ──────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ const ATTR_STATS: Record<string, Record<string, number>> = {
 
 // ─── Avatar preview component ──────────────────────────────────────────────────
 
-function AvatarPreview({ draft, animeMode }: { draft: ReturnType<typeof useCharacterStore>['draft'], animeMode: boolean }) {
+function AvatarPreview({ draft, animeMode }: { draft: CharacterDraft, animeMode: boolean }) {
   const jersey = JERSEY_STYLES.find((j) => j.id === draft.jerseyStyle)
   const skin = SKIN_TONES.find((s) => s.id === draft.skinTone)
   const attribute = DOMINANT_ATTRS.find((attr) => attr.id === draft.dominantAttr)

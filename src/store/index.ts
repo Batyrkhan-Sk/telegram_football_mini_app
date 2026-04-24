@@ -68,7 +68,7 @@ export const useBattleStore = create<BattleStore>((set) => ({
 
 // ─── Character Store ───────────────────────────────────────────────────────────
 
-interface CharacterDraft {
+export interface CharacterDraft {
   nickname: string
   hairstyle: string
   faceType: string
