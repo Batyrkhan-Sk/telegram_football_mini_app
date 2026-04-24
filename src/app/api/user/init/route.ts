@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { xpToLevel } from '@/lib/battle/engine'
+import { ensureStarterCard } from '@/lib/starter-card'
 
 const InitSchema = z.object({
   telegramId: z.string(),
@@ -38,15 +39,6 @@ export async function POST(req: NextRequest) {
         include: { profile: true },
       })
 
-      // Assign starter card (fwd-common)
-      const starterCard = await prisma.card.findFirst({
-        where: { id: 'card-fwd-common' },
-      })
-      if (starterCard) {
-        await prisma.userCard.create({
-          data: { userId: user.id, cardId: starterCard.id, energy: 100 },
-        })
-      }
     } else {
       // Update Telegram info if changed
       await prisma.user.update({
@@ -58,6 +50,8 @@ export async function POST(req: NextRequest) {
         },
       })
     }
+
+    await ensureStarterCard(user.id)
 
     // Recalculate level from XP
     if (user.profile) {

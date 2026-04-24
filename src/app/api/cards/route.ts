@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isOnCooldown } from '@/lib/utils'
+import { ensureStarterCard } from '@/lib/starter-card'
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,6 +14,8 @@ export async function GET(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { telegramId } })
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    await ensureStarterCard(user.id)
 
     const userCards = await prisma.userCard.findMany({
       where: { userId: user.id },
