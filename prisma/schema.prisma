@@ -24,9 +24,6 @@ model User {
   profile        PlayerProfile?
   redemptions    PromoRedemption[]
   userCards      UserCard[]
-  arMatchesAsP1  ArPenaltyMatch[] @relation("ArPenaltyPlayer1")
-  arMatchesAsP2  ArPenaltyMatch[] @relation("ArPenaltyPlayer2")
-  arTurns         ArPenaltyShot[]
 }
 
 model PlayerProfile {
@@ -173,37 +170,6 @@ model PromoRedemption {
   user        User       @relation(fields: [userId], references: [id])
 }
 
-model ArPenaltyMatch {
-  id                String        @id @default(cuid())
-  player1Id         String
-  player2Id         String?
-  currentTurnUserId String?
-  status            ArMatchStatus @default(PENDING)
-  maxRounds         Int           @default(5)
-  winnerId          String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  completedAt       DateTime?
-  player1           User          @relation("ArPenaltyPlayer1", fields: [player1Id], references: [id], onDelete: Cascade)
-  player2           User?         @relation("ArPenaltyPlayer2", fields: [player2Id], references: [id])
-  shots             ArPenaltyShot[]
-}
-
-model ArPenaltyShot {
-  id        String        @id @default(cuid())
-  matchId   String
-  userId    String
-  round     Int
-  outcome   ArShotOutcome
-  power     Float
-  angle     Float
-  createdAt DateTime      @default(now())
-  match     ArPenaltyMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([matchId, userId, round])
-}
-
 enum CardRarity {
   COMMON
   RARE
@@ -242,19 +208,4 @@ enum RewardType {
   AR_COOLDOWN_BYPASS
   BONUS_COINS
   BONUS_XP
-}
-
-enum ArMatchStatus {
-  PENDING
-  WAITING
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-
-enum ArShotOutcome {
-  GOAL
-  SAVE
-  WIDE
-  SOFT
 }
