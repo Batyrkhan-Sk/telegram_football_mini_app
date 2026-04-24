@@ -1,6 +1,7 @@
 'use client'
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createAvatar } from '@dicebear/core'
@@ -9,9 +10,12 @@ import * as lorelei from '@dicebear/lorelei'
 import {
   Camera,
   Check,
+  Home,
   ImagePlus,
+  Share2,
   RefreshCw,
   ShieldCheck,
+  Swords,
   SlidersHorizontal,
   Sparkles,
   Upload,
@@ -21,7 +25,7 @@ import {
 import { useUserStore, useCharacterStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
 import { StatBar, SectionHeader, LoadingSpinner } from '@/components/ui'
-import { hapticFeedback } from '@/lib/telegram'
+import { hapticFeedback, shareToTelegram } from '@/lib/telegram'
 import type { CharacterDraft } from '@/store'
 import type { Character } from '@/types'
 
@@ -36,8 +40,6 @@ interface IdentityProfile {
   featureFocus: string
   colorNote: string
 }
-
-// ─── Static data (unchanged from original) ───────────────────────────────────
 
 const HAIRSTYLES = [
   { id: 'style1', label: 'Buzz Cut',  description: 'Clean silhouette' },
@@ -104,13 +106,7 @@ const ATTR_STATS: Record<string, Record<string, number>> = {
   defense:   { speed: 60, shot: 52, dribbling: 58, physical: 75, defense: 85 },
 }
 
-// ─── DiceBear draft → option mappers ─────────────────────────────────────────
 
-/**
- * Maps the user's draft to avataaars options.
- * avataaars supports: skinColor, top (hair), facialHair, clothesColor, eyes, eyebrows, mouth
- * We map only what we expose in the UI; the rest DiceBear fills from the seed.
- */
 function draftToAvataaarsOptions(draft: CharacterDraft, seed: string) {
   const skinMap: Record<string, string> = {
     tone1: 'f8d25c', // fair
@@ -119,7 +115,6 @@ function draftToAvataaarsOptions(draft: CharacterDraft, seed: string) {
     tone4: '3b1f1f', // deep
   }
 
-  // avataaars "top" (hair) values — deterministic choices per our hairstyle IDs
   const topMap: Record<string, string> = {
     style1: 'shortHair',       // buzz/short
     style2: 'frizzle',         // wild / mohawk-ish
@@ -127,7 +122,6 @@ function draftToAvataaarsOptions(draft: CharacterDraft, seed: string) {
     style4: 'bigHair',         // afro volume
   }
 
-  // eyes differ per face type to give distinct "expressions"
   const eyesMap: Record<string, string> = {
     face1: 'squint',    // sharp / angular → narrowed
     face2: 'happy',     // cool / balanced → friendly
@@ -142,7 +136,6 @@ function draftToAvataaarsOptions(draft: CharacterDraft, seed: string) {
     face4: 'flatNatural',
   }
 
-  // jersey colour → closest avataaars clothes colour (hex without #)
   const jerseyColorMap: Record<string, string> = {
     jersey1: 'f5c518', // kairat yellow
     jersey2: 'eeeeee', // white
@@ -191,14 +184,6 @@ function draftToLoreleiOptions(draft: CharacterDraft, seed: string) {
   }
 }
 
-// ─── Avatar component ─────────────────────────────────────────────────────────
-
-/**
- * Renders a DiceBear SVG avatar as an <img> tag.
- * Uses avataaars in standard mode and lorelei in anime mode.
- * The seed is derived from the user's nickname + draft fingerprint so the
- * avatar is deterministic and personal.
- */
 function DiceBearAvatar({
   draft,
   animeMode,
@@ -213,11 +198,11 @@ function DiceBearAvatar({
     const seed = `${draft.nickname || 'kairat'}-${draft.hairstyle}-${draft.faceType}-${draft.skinTone}-${draft.jerseyStyle}`
 
     if (animeMode) {
-      const avatar = createAvatar(lorelei as unknown as Parameters<typeof createAvatar>[0], draftToLoreleiOptions(draft, seed))
+      const avatar = createAvatar(lorelei, draftToLoreleiOptions(draft, seed) as never)
       return avatar.toDataUri()
     }
 
-    const avatar = createAvatar(avataaars as unknown as Parameters<typeof createAvatar>[0], draftToAvataaarsOptions(draft, seed))
+    const avatar = createAvatar(avataaars, draftToAvataaarsOptions(draft, seed) as never)
     return avatar.toDataUri()
   }, [draft, animeMode])
 
@@ -439,6 +424,7 @@ export default function CharacterPage() {
   )
   const [saved, setSaved]         = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
+  const [savedCharacterId, setSavedCharacterId] = useState<string | null>(null)
 
   const { data: existingData } = useQuery<{ data: Character | null }>({
     queryKey: ['character', user?.telegramId],
@@ -453,6 +439,7 @@ export default function CharacterPage() {
         existingData.data
       updateDraft({ nickname, hairstyle, faceType, skinTone, jerseyStyle, dominantAttr, animeMode })
       setSavedCharacter(existingData.data)
+      setSavedCharacterId(existingData.data.id)
       setIsHydrated(true)
     }
   }, [existingData?.data, isHydrated, updateDraft, setSavedCharacter])
@@ -514,12 +501,28 @@ export default function CharacterPage() {
     onSuccess: (res) => {
       if (res.data) {
         setSavedCharacter(res.data)
+        setSavedCharacterId(res.data.id)
         setSaved(true)
         hapticFeedback('success')
         qc.invalidateQueries({ queryKey: ['character'] })
+        qc.invalidateQueries({ queryKey: ['cards'] })
       }
     },
   })
+
+  const shareCharacter = () => {
+    const characterId = savedCharacterId ?? existingData?.data?.id
+    if (!characterId) return
+
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : '')
+
+    shareToTelegram(
+      `${baseUrl}/character/${characterId}`,
+      `${draft.nickname || 'My player'} is ready for Kairat x Snickers`,
+    )
+  }
 
   const isGenerating =
     generationState === 'analyzing' || generationState === 'reconstructing'
@@ -557,6 +560,32 @@ export default function CharacterPage() {
         >
           Edit Character
         </button>
+
+        <div className="grid w-full grid-cols-2 gap-3">
+          <Link
+            href="/"
+            className="flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-surface-2 py-3.5 font-display font-800 uppercase text-white"
+          >
+            <Home size={16} />
+            Home
+          </Link>
+          <button
+            onClick={shareCharacter}
+            disabled={!savedCharacterId}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-brand/50 bg-brand/10 py-3.5 font-display font-800 uppercase text-brand disabled:opacity-40"
+          >
+            <Share2 size={16} />
+            Share
+          </button>
+        </div>
+
+        <Link
+          href="/battle"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-surface-2 py-3.5 font-display font-800 uppercase text-white"
+        >
+          <Swords size={16} />
+          Use In Battle Cards
+        </Link>
         <BottomNav />
       </div>
     )

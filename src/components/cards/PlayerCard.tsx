@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { RARITY_CONFIG, POSITION_LABELS } from '@/config/game'
 import type { UserCard } from '@/types'
-import { Zap, Clock } from 'lucide-react'
+import { Zap, Clock, UserRound } from 'lucide-react'
 import { formatTimeLeft } from '@/lib/utils'
 
 interface CardProps {
@@ -63,6 +63,10 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
                 e.currentTarget.style.display = 'none'
               }}
             />
+          ) : card.isCustom ? (
+            <div className="w-full h-full flex items-center justify-center bg-brand/10">
+              <UserRound size={26} className="text-brand" />
+            </div>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-2xl">
               {card.position === 'GK' ? '🧤' : card.position === 'DEF' ? '🛡️' : card.position === 'MID' ? '⚡' : '⚽'}
@@ -126,6 +130,15 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
               e.currentTarget.style.display = 'none'
             }}
           />
+        ) : card.isCustom ? (
+          <div className="flex flex-col items-center justify-center gap-3 text-brand">
+            <div className="flex h-24 w-24 items-center justify-center rounded-full border border-brand/35 bg-brand/10">
+              <UserRound size={54} />
+            </div>
+            <span className="text-xs font-display font-800 uppercase tracking-[0.18em] text-brand/80">
+              Custom Player
+            </span>
+          </div>
         ) : (
           <div className="text-7xl select-none">
             {card.position === 'GK' ? '🧤' : card.position === 'DEF' ? '🛡️' : card.position === 'MID' ? '⚡' : '⚽'}
