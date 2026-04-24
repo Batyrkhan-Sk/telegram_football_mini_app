@@ -1,62 +1,246 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Camera, QrCode, Timer, Target, Zap } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Camera, Gauge, Goal, QrCode, Share2, Swords, Target, Timer, Trophy, Zap } from 'lucide-react'
 import { useUserStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
-import { LoadingSpinner, Badge } from '@/components/ui'
-import { hapticFeedback } from '@/lib/telegram'
-import { formatTimeLeft, isOnCooldown } from '@/lib/utils'
-import Link from 'next/link'
+import { LoadingSpinner } from '@/components/ui'
+import { hapticFeedback, shareToTelegram } from '@/lib/telegram'
+import { formatTimeLeft } from '@/lib/utils'
 import { AR_MODE } from '@/config/game'
 
 type Phase = 'idle' | 'camera' | 'playing' | 'finished'
-type ShotResult = 'goal' | 'save' | null
+type PlayMode = 'solo' | 'friend'
+type ShotOutcome = 'goal' | 'save' | 'wide' | 'soft'
 
-const GK_ZONES = ['top-left', 'top-center', 'top-right', 'mid-left', 'mid-right', 'bottom-left', 'bottom-right']
+interface ShotResult {
+  outcome: ShotOutcome
+  targetX: number
+  targetY: number
+  power: number
+  speed: number
+  angle: number
+  curve: number
+  keeperX: number
+  keeperY: number
+  reaction: number
+}
 
-function GoalNet({ onShoot }: { onShoot: (zone: string) => void }) {
+interface PointerSample {
+  x: number
+  y: number
+  time: number
+}
+
+const BALL_START = { x: 50, y: 86 }
+const GOAL = {
+  left: 12,
+  right: 88,
+  top: 9,
+  bottom: 43,
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const distance = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by)
+
+function pctFromPointer(event: PointerEvent<HTMLDivElement>, element: HTMLDivElement) {
+  const rect = element.getBoundingClientRect()
+  return {
+    x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+    y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+  }
+}
+
+function evaluateShot(samples: PointerSample[], shotIndex: number): ShotResult {
+  const first = samples[0] ?? { ...BALL_START, time: performance.now() }
+  const last = samples[samples.length - 1] ?? first
+  const previous = samples[Math.max(0, samples.length - 4)] ?? first
+  const duration = Math.max(last.time - first.time, 80)
+  const dx = last.x - first.x
+  const dy = last.y - first.y
+  const releaseDx = last.x - previous.x
+  const releaseDy = last.y - previous.y
+  const releaseSpeed = Math.hypot(releaseDx, releaseDy) / Math.max(last.time - previous.time, 16)
+  const dragDistance = Math.hypot(dx, dy)
+  const upwardIntent = clamp((first.y - last.y) / 42, 0, 1)
+  const power = clamp((dragDistance / 58) * 0.6 + releaseSpeed * 6.5 + upwardIntent * 0.25, 0.08, 1)
+  const horizontalAim = clamp(dx / 42, -1.05, 1.05)
+  const lift = clamp((first.y - last.y) / 55, 0, 1)
+  const curve = clamp((releaseDx - dx * 0.18) / 28, -0.55, 0.55)
+  const targetX = clamp(50 + horizontalAim * 34 + curve * 9, 3, 97)
+  const targetY = clamp(GOAL.bottom - lift * 32 - power * 8, 4, 58)
+  const angle = Math.atan2(-dy, dx) * (180 / Math.PI)
+  const timingNoise = Math.sin((shotIndex + 1) * 2.37 + power * 3.1) * 8
+  const reaction = clamp(0.5 + power * 0.28 + Math.abs(horizontalAim) * 0.08, 0.45, 0.88)
+  const keeperX = clamp(50 + horizontalAim * 26 + curve * 5 + timingNoise * (1 - power * 0.35), 23, 77)
+  const keeperY = clamp(30 - lift * 9 + power * 4, 15, 40)
+  const inGoal = targetX >= GOAL.left && targetX <= GOAL.right && targetY >= GOAL.top && targetY <= GOAL.bottom
+  const hasEnoughPower = power > 0.28 && upwardIntent > 0.18
+  const saveRadius = 11.5 + reaction * 8 - power * 4
+  const saved = distance(targetX, targetY, keeperX, keeperY) < saveRadius
+
+  let outcome: ShotOutcome = 'goal'
+  if (!hasEnoughPower) outcome = 'soft'
+  else if (!inGoal) outcome = 'wide'
+  else if (saved) outcome = 'save'
+
+  return {
+    outcome,
+    targetX,
+    targetY,
+    power,
+    speed: releaseSpeed,
+    angle,
+    curve,
+    keeperX,
+    keeperY,
+    reaction,
+  }
+}
+
+function outcomeLabel(outcome: ShotOutcome) {
+  if (outcome === 'goal') return 'GOAL'
+  if (outcome === 'save') return 'SAVED'
+  if (outcome === 'soft') return 'TOO SOFT'
+  return 'WIDE'
+}
+
+function PenaltyArena({
+  disabled,
+  lastShot,
+  onShot,
+}: {
+  disabled: boolean
+  lastShot: ShotResult | null
+  onShot: (shot: ShotResult) => void
+}) {
+  const arenaRef = useRef<HTMLDivElement | null>(null)
+  const samplesRef = useRef<PointerSample[]>([])
+  const shotCounterRef = useRef(0)
+  const [dragging, setDragging] = useState(false)
+  const [pointer, setPointer] = useState(BALL_START)
+  const [aimPreview, setAimPreview] = useState<{ x: number; y: number; power: number } | null>(null)
+
+  const beginDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (disabled || !arenaRef.current) return
+    const point = pctFromPointer(event, arenaRef.current)
+    if (distance(point.x, point.y, BALL_START.x, BALL_START.y) > 20) return
+
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const sample = { ...point, time: performance.now() }
+    samplesRef.current = [sample]
+    setPointer(point)
+    setDragging(true)
+    setAimPreview({ x: point.x, y: point.y, power: 0 })
+    hapticFeedback('light')
+  }
+
+  const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragging || !arenaRef.current) return
+    const point = pctFromPointer(event, arenaRef.current)
+    const sample = { ...point, time: performance.now() }
+    samplesRef.current = [...samplesRef.current.slice(-9), sample]
+    const first = samplesRef.current[0]
+    const power = clamp(distance(first.x, first.y, point.x, point.y) / 58, 0, 1)
+    setPointer(point)
+    setAimPreview({ x: clamp(50 + (point.x - first.x) * 0.75, 6, 94), y: clamp(point.y - power * 18, 6, 62), power })
+  }
+
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    setDragging(false)
+    setAimPreview(null)
+
+    const shot = evaluateShot(samplesRef.current, shotCounterRef.current)
+    shotCounterRef.current += 1
+    samplesRef.current = []
+    setPointer(BALL_START)
+    hapticFeedback(shot.outcome === 'goal' ? 'success' : 'warning')
+    onShot(shot)
+  }
+
   return (
-    <div className="relative w-full aspect-[2/1] max-w-sm mx-auto">
-      {/* Goal frame */}
-      <div className="absolute inset-0 border-4 border-white/30 rounded-t-lg bg-gradient-to-b from-pitch-bg/60 to-transparent">
-        {/* Goal net grid */}
-        <div className="absolute inset-0 opacity-20"
+    <div
+      ref={arenaRef}
+      onPointerDown={beginDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      className="relative h-[62vh] min-h-[460px] w-full overflow-hidden rounded-t-[28px] border-t border-white/10 pitch-bg touch-none select-none"
+    >
+      <div className="absolute inset-x-4 top-8 h-[34%] rounded-t-2xl border-4 border-white/35 bg-black/10">
+        <div
+          className="absolute inset-0 opacity-20"
           style={{
             backgroundImage: 'linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)',
-            backgroundSize: '16.66% 33.33%',
+            backgroundSize: '16.6% 33.3%',
           }}
         />
-
-        {/* Clickable zones */}
-        <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-0">
-          {['tl','tc','tr','ml','mc','mr','bl','bc','br'].map((zone, i) => (
-            <button
-              key={zone}
-              onClick={() => onShoot(zone)}
-              className="relative opacity-0 hover:opacity-100 hover:bg-white/10 transition-all active:bg-white/20"
-              aria-label={`Shoot ${zone}`}
-            />
-          ))}
-        </div>
       </div>
 
-      {/* Goalkeeper */}
       <motion.div
-        className="absolute text-3xl"
+        className="absolute z-20 flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-2xl shadow-[0_10px_34px_rgba(0,0,0,0.5)]"
         animate={{
-          x: ['0%', '30%', '-30%', '15%', '-15%', '0%'],
-          transition: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
+          left: `${lastShot ? lastShot.keeperX : 50}%`,
+          top: `${lastShot ? lastShot.keeperY : 31}%`,
+          rotate: lastShot ? lastShot.curve * 26 : [0, 4, -4, 0],
         }}
-        style={{ left: '50%', transform: 'translateX(-50%)', bottom: '5%' }}
+        transition={{ type: 'spring', stiffness: 170, damping: 20 }}
+        style={{ translateX: '-50%', translateY: '-50%' }}
       >
-        🧤
+        <span className="text-base">GK</span>
       </motion.div>
 
-      {/* Ball */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-2xl">⚽</div>
+      {aimPreview && (
+        <svg className="absolute inset-0 z-10 h-full w-full pointer-events-none">
+          <line
+            x1={`${BALL_START.x}%`}
+            y1={`${BALL_START.y}%`}
+            x2={`${aimPreview.x}%`}
+            y2={`${aimPreview.y}%`}
+            stroke="rgba(245,197,24,0.85)"
+            strokeWidth={3 + aimPreview.power * 5}
+            strokeLinecap="round"
+            strokeDasharray="8 8"
+          />
+        </svg>
+      )}
+
+      <AnimatePresence>
+        {lastShot && (
+          <motion.div
+            key={`${lastShot.targetX}-${lastShot.targetY}-${lastShot.power}`}
+            initial={{ left: `${BALL_START.x}%`, top: `${BALL_START.y}%`, scale: 1 }}
+            animate={{ left: `${lastShot.targetX}%`, top: `${lastShot.targetY}%`, scale: 0.62 + lastShot.power * 0.45 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.36 + (1 - lastShot.power) * 0.22, ease: 'easeOut' }}
+            className="absolute z-30 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-[0_0_24px_rgba(255,255,255,0.45)]"
+            style={{ translateX: '-50%', translateY: '-50%' }}
+          >
+            <span className="text-lg">o</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        className="absolute z-30 flex h-11 w-11 items-center justify-center rounded-full border-2 border-white bg-brand text-black shadow-[0_12px_30px_rgba(0,0,0,0.45)]"
+        animate={{ left: `${dragging ? pointer.x : BALL_START.x}%`, top: `${dragging ? pointer.y : BALL_START.y}%` }}
+        transition={{ type: 'spring', stiffness: dragging ? 500 : 220, damping: 28 }}
+        style={{ translateX: '-50%', translateY: '-50%' }}
+      >
+        <span className="text-xl">o</span>
+      </motion.div>
+
+      <div className="absolute inset-x-0 bottom-6 z-20 px-4 text-center">
+        <div className="mx-auto max-w-xs rounded-2xl border border-white/10 bg-black/40 px-4 py-3 backdrop-blur">
+          <p className="font-display text-sm font-800 uppercase text-brand">Drag from the ball, then release</p>
+          <p className="text-xs text-gray-400">Direction sets angle. Flick speed sets power. Late curve changes placement.</p>
+        </div>
+      </div>
     </div>
   )
 }
@@ -65,11 +249,22 @@ export default function ArPage() {
   const { user } = useUserStore()
   const qc = useQueryClient()
   const [phase, setPhase] = useState<Phase>('idle')
+  const [playMode, setPlayMode] = useState<PlayMode>('solo')
   const [goalsScored, setGoalsScored] = useState(0)
   const [shotsLeft, setShotsLeft] = useState<number>(AR_MODE.SHOTS_PER_SESSION)
-  const [lastShot, setLastShot] = useState<ShotResult>(null)
+  const [lastShot, setLastShot] = useState<ShotResult | null>(null)
   const [shotHistory, setShotHistory] = useState<ShotResult[]>([])
+  const [targetScore, setTargetScore] = useState<number | null>(null)
   const [sessionResult, setSessionResult] = useState<{ success: boolean; xpGained: number; coinsGained: number } | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const target = Number(params.get('target'))
+    if (Number.isFinite(target) && target >= 0) {
+      setPlayMode('friend')
+      setTargetScore(clamp(target, 0, AR_MODE.SHOTS_PER_SESSION))
+    }
+  }, [])
 
   const { data: arStatus } = useQuery({
     queryKey: ['ar-status', user?.telegramId],
@@ -93,79 +288,146 @@ export default function ArPage() {
     },
   })
 
-  const handleShoot = useCallback((zone: string) => {
-    if (shotsLeft <= 0) return
-    hapticFeedback('medium')
-
-    // GK saves ~40% of shots — weighted towards center/bottom shots
-    const isGoal = Math.random() > 0.40
-    const result: ShotResult = isGoal ? 'goal' : 'save'
-
-    setLastShot(result)
-    setShotHistory((prev) => [...prev, result])
-    if (isGoal) setGoalsScored((g) => g + 1)
-
-    const newShotsLeft = shotsLeft - 1
-    setShotsLeft(newShotsLeft)
-
-    setTimeout(() => {
-      setLastShot(null)
-      if (newShotsLeft === 0) {
-        const finalGoals = isGoal ? goalsScored + 1 : goalsScored
-        setPhase('finished')
-        submitSession({ goalsScored: finalGoals, totalShots: AR_MODE.SHOTS_PER_SESSION })
-      }
-    }, 900)
-  }, [shotsLeft, goalsScored, submitSession])
-
   const onCooldown = arStatus?.data?.onCooldown
   const cooldownEnd = arStatus?.data?.cooldownEnd
 
-  // ── Idle / cooldown screen ─────────────────────────────────────────────────
+  const resetSession = useCallback((mode = playMode) => {
+    setPhase('idle')
+    setPlayMode(mode)
+    setGoalsScored(0)
+    setShotsLeft(AR_MODE.SHOTS_PER_SESSION)
+    setLastShot(null)
+    setShotHistory([])
+    setSessionResult(null)
+  }, [playMode])
+
+  const startPlaying = () => {
+    setGoalsScored(0)
+    setShotsLeft(AR_MODE.SHOTS_PER_SESSION)
+    setLastShot(null)
+    setShotHistory([])
+    setSessionResult(null)
+    setPhase('playing')
+  }
+
+  const handleShot = useCallback((shot: ShotResult) => {
+    if (shotsLeft <= 0 || lastShot) return
+
+    const scored = shot.outcome === 'goal'
+    const newGoals = goalsScored + (scored ? 1 : 0)
+    const newShotsLeft = shotsLeft - 1
+
+    setLastShot(shot)
+    setShotHistory((current) => [...current, shot])
+    setGoalsScored(newGoals)
+    setShotsLeft(newShotsLeft)
+
+    window.setTimeout(() => {
+      setLastShot(null)
+      if (newShotsLeft === 0) {
+        setPhase('finished')
+        if (playMode === 'solo') {
+          submitSession({ goalsScored: newGoals, totalShots: AR_MODE.SHOTS_PER_SESSION })
+        }
+      }
+    }, 1050)
+  }, [goalsScored, lastShot, playMode, shotsLeft, submitSession])
+
+  const shareFriendChallenge = () => {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+    const url = `${baseUrl}/ar?mode=friend&target=${goalsScored}`
+    shareToTelegram(url, `I scored ${goalsScored}/${AR_MODE.SHOTS_PER_SESSION} penalties. Beat my score.`)
+  }
+
+  const shotQuality = useMemo(() => {
+    if (!lastShot) return null
+    return [
+      { label: 'Power', value: Math.round(lastShot.power * 100) },
+      { label: 'Angle', value: Math.round(Math.abs(lastShot.angle)) },
+      { label: 'Curve', value: Math.round(Math.abs(lastShot.curve) * 100) },
+    ]
+  }, [lastShot])
 
   if (phase === 'idle') {
     return (
-      <div className="flex flex-col min-h-screen pb-24">
+      <div className="flex min-h-screen flex-col pb-24">
         <div className="px-4 pt-4">
-          <h1 className="font-display font-900 text-3xl uppercase mb-1">Penalty Mode</h1>
-          <p className="text-gray-400 text-sm mb-6">Score 3+ goals to earn XP and coins</p>
+          <h1 className="mb-1 font-display text-3xl font-900 uppercase">Penalty AR</h1>
+          <p className="mb-5 text-sm text-gray-400">Swipe through the ball to shape your shot.</p>
 
-          {/* Info cards */}
-          <div className="grid grid-cols-3 gap-2 mb-6">
-            {[
-              { icon: Target, label: 'Shots', value: '5' },
-              { icon: Zap, label: 'Goals needed', value: '3+' },
-              { icon: Timer, label: 'Cooldown', value: `${AR_MODE.SESSION_COOLDOWN_HOURS}h` },
-            ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="bg-surface-2 border border-white/6 rounded-xl p-3 text-center">
-                <Icon size={16} className="text-brand mx-auto mb-1" />
-                <p className="font-display font-900 text-xl text-brand">{value}</p>
-                <p className="text-[9px] text-gray-500 uppercase">{label}</p>
-              </div>
-            ))}
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setPlayMode('solo')}
+              className={`rounded-2xl border p-4 text-left ${playMode === 'solo' ? 'border-brand bg-brand/15' : 'border-white/8 bg-surface-2'}`}
+            >
+              <Target className="mb-3 text-brand" size={22} />
+              <p className="font-display font-900 uppercase">AI Keeper</p>
+              <p className="text-xs text-gray-400">Score 3+ from 5</p>
+            </button>
+            <button
+              onClick={() => setPlayMode('friend')}
+              className={`rounded-2xl border p-4 text-left ${playMode === 'friend' ? 'border-brand bg-brand/15' : 'border-white/8 bg-surface-2'}`}
+            >
+              <Swords className="mb-3 text-brand" size={22} />
+              <p className="font-display font-900 uppercase">Friend</p>
+              <p className="text-xs text-gray-400">Set or beat a score</p>
+            </button>
           </div>
 
-          {/* Big goal net preview */}
-          <div className="pitch-bg rounded-3xl p-6 mb-6">
-            <div className="relative w-full aspect-[2/1] max-w-xs mx-auto border-4 border-white/20 rounded-t-xl flex items-center justify-center">
-              <div className="text-6xl">🧤</div>
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-3xl">⚽</div>
+          <div className="mb-5 rounded-3xl border border-brand/20 bg-surface-2 p-4">
+            <div className="relative mx-auto mb-4 h-52 max-w-sm overflow-hidden rounded-2xl border border-white/10 pitch-bg">
+              <div className="absolute inset-x-8 top-6 h-20 rounded-t-xl border-4 border-white/25" />
+              <motion.div
+                className="absolute left-1/2 top-16 flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full bg-slate-900 text-xs font-display font-900"
+                animate={{ x: [-42, 36, -18, 18, 0] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                GK
+              </motion.div>
+              <motion.div
+                className="absolute bottom-8 left-1/2 flex h-10 w-10 -translate-x-1/2 items-center justify-center rounded-full bg-brand text-black"
+                animate={{ y: [0, -8, 0] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                o
+              </motion.div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { icon: Gauge, label: 'Velocity', value: 'Flick' },
+                { icon: Goal, label: 'Angle', value: 'Aim' },
+                { icon: Zap, label: 'Curve', value: 'Late drag' },
+              ].map(({ icon: Icon, label, value }) => (
+                <div key={label} className="rounded-xl bg-surface-3 p-3 text-center">
+                  <Icon size={16} className="mx-auto mb-1 text-brand" />
+                  <p className="font-display font-900 text-sm uppercase text-brand">{value}</p>
+                  <p className="text-[9px] uppercase text-gray-500">{label}</p>
+                </div>
+              ))}
             </div>
           </div>
 
-          {onCooldown ? (
+          {targetScore !== null && playMode === 'friend' && (
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-brand/25 bg-brand/10 p-4">
+              <Trophy size={20} className="text-brand" />
+              <div>
+                <p className="font-display font-900 uppercase text-brand">Friend score: {targetScore}/{AR_MODE.SHOTS_PER_SESSION}</p>
+                <p className="text-xs text-gray-400">Beat it to win the challenge.</p>
+              </div>
+            </div>
+          )}
+
+          {onCooldown && playMode === 'solo' ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
-                <Timer size={20} className="text-red-400 flex-shrink-0" />
+              <div className="flex items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+                <Timer size={20} className="text-red-400" />
                 <div>
-                  <p className="font-display font-800 text-sm uppercase text-red-400">Mode on Cooldown</p>
+                  <p className="font-display font-800 uppercase text-red-400">Mode on Cooldown</p>
                   <p className="text-xs text-gray-400">Available in {formatTimeLeft(cooldownEnd)}</p>
                 </div>
               </div>
-              <Link
-                href="/scan"
-                className="flex items-center justify-center gap-2 w-full bg-red-600 text-white font-display font-800 uppercase py-3.5 rounded-2xl"
-              >
+              <Link href="/scan" className="flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 py-3.5 font-display font-800 uppercase text-white">
                 <QrCode size={18} />
                 Scan SNICKERS to Bypass
               </Link>
@@ -173,10 +435,10 @@ export default function ArPage() {
           ) : (
             <button
               onClick={() => setPhase('camera')}
-              className="w-full flex items-center justify-center gap-2 bg-brand text-black font-display font-800 uppercase text-lg py-4 rounded-2xl"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand py-4 font-display text-lg font-900 uppercase text-black"
             >
               <Camera size={20} />
-              Start Penalty Session
+              Start Gesture Session
             </button>
           )}
         </div>
@@ -185,161 +447,170 @@ export default function ArPage() {
     )
   }
 
-  // ── Camera / permission screen ─────────────────────────────────────────────
-
   if (phase === 'camera') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4 gap-6 text-center">
-        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-          <Camera size={64} className="text-brand mx-auto mb-3" />
-          <h2 className="font-display font-900 text-2xl uppercase mb-2">Camera Mode</h2>
-          <p className="text-gray-400 text-sm mb-1">
-            Point your camera at a surface to activate the AR goal.
-          </p>
-          <p className="text-xs text-gray-600">
-            (MVP: simulated AR — tap zones to shoot)
-          </p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 text-center">
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+          <Camera size={64} className="mx-auto mb-3 text-brand" />
+          <h2 className="mb-2 font-display text-2xl font-900 uppercase">Gesture AR Setup</h2>
+          <p className="text-sm text-gray-400">Simulated AR goal is ready. Shoot by dragging from the ball and releasing toward the net.</p>
         </motion.div>
 
-        <div className="bg-surface-2 border border-white/8 rounded-2xl p-4 w-full text-left space-y-2">
-          <p className="font-display font-700 text-sm uppercase text-gray-400">How to play:</p>
-          <p className="text-sm text-gray-300">1. Tap zones in the goal to shoot</p>
-          <p className="text-sm text-gray-300">2. The GK moves — time your shot</p>
-          <p className="text-sm text-gray-300">3. Score 3+ out of 5 to win</p>
+        <div className="w-full rounded-2xl border border-white/8 bg-surface-2 p-4 text-left">
+          <p className="mb-2 font-display text-sm font-800 uppercase text-gray-400">Football rules</p>
+          <p className="text-sm text-gray-300">1. Start your swipe on the ball.</p>
+          <p className="text-sm text-gray-300">2. Fast release adds acceleration.</p>
+          <p className="text-sm text-gray-300">3. Side movement bends the shot.</p>
+          <p className="text-sm text-gray-300">4. Keeper reads your angle and reacts late.</p>
         </div>
 
-        <button
-          onClick={() => setPhase('playing')}
-          className="w-full bg-brand text-black font-display font-800 uppercase text-lg py-4 rounded-2xl"
-        >
-          Ready → Start
+        <button onClick={startPlaying} className="w-full rounded-2xl bg-brand py-4 font-display text-lg font-900 uppercase text-black">
+          Ready - Start
         </button>
       </div>
     )
   }
 
-  // ── Playing screen ─────────────────────────────────────────────────────────
-
   if (phase === 'playing') {
     return (
-      <div className="flex flex-col min-h-screen">
-        {/* HUD */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="flex min-h-screen flex-col bg-surface-0">
+        <div className="flex items-center justify-between px-4 pb-3 pt-4">
           <div className="flex items-center gap-1.5">
-            {Array.from({ length: AR_MODE.SHOTS_PER_SESSION }).map((_, i) => {
-              const shot = shotHistory[i]
+            {Array.from({ length: AR_MODE.SHOTS_PER_SESSION }).map((_, index) => {
+              const shot = shotHistory[index]
               return (
                 <div
-                  key={i}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-sm border-2 ${
-                    shot === 'goal' ? 'border-green-400 bg-green-400/20' :
-                    shot === 'save' ? 'border-red-400 bg-red-400/20' :
-                    'border-white/20 bg-surface-3'
+                  key={index}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-[10px] font-display font-900 ${
+                    shot?.outcome === 'goal' ? 'border-green-400 bg-green-400/20 text-green-300' :
+                    shot ? 'border-red-400 bg-red-400/20 text-red-300' :
+                    'border-white/20 bg-surface-3 text-gray-500'
                   }`}
                 >
-                  {shot === 'goal' ? '⚽' : shot === 'save' ? '🧤' : ''}
+                  {shot?.outcome === 'goal' ? 'G' : shot ? 'X' : ''}
                 </div>
               )
             })}
           </div>
           <div className="text-right">
-            <p className="font-display font-900 text-2xl text-brand">{goalsScored}</p>
-            <p className="text-[10px] text-gray-400 uppercase">Goals</p>
+            <p className="font-display text-2xl font-900 text-brand">{goalsScored}</p>
+            <p className="text-[10px] uppercase text-gray-400">Goals</p>
           </div>
         </div>
 
-        {/* Pitch */}
-        <div className="flex-1 pitch-bg flex flex-col items-center justify-center px-4 gap-4">
+        <div className="relative flex-1">
           <AnimatePresence>
             {lastShot && (
               <motion.div
-                key={lastShot}
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 1.5, opacity: 0 }}
-                className="text-center mb-2"
+                key={`${lastShot.outcome}-${shotHistory.length}`}
+                initial={{ opacity: 0, y: -8, scale: 0.94 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="absolute left-4 right-4 top-3 z-40 rounded-2xl border border-white/10 bg-black/65 p-3 text-center backdrop-blur"
               >
-                <p className={`font-display font-900 text-4xl ${lastShot === 'goal' ? 'text-green-400' : 'text-red-400'}`}>
-                  {lastShot === 'goal' ? '⚽ GOAL!' : '🧤 SAVED!'}
+                <p className={`font-display text-3xl font-900 uppercase ${lastShot.outcome === 'goal' ? 'text-green-400' : 'text-red-400'}`}>
+                  {outcomeLabel(lastShot.outcome)}
                 </p>
+                {shotQuality && (
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {shotQuality.map((metric) => (
+                      <div key={metric.label} className="rounded-lg bg-white/8 px-2 py-1">
+                        <p className="text-[9px] uppercase text-gray-400">{metric.label}</p>
+                        <p className="font-display font-900 text-brand">{metric.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
+          <PenaltyArena disabled={!!lastShot || shotsLeft <= 0} lastShot={lastShot} onShot={handleShot} />
+        </div>
 
-          <GoalNet onShoot={handleShoot} />
-
-          <p className="text-gray-400 text-sm font-display uppercase">
-            Tap a zone to shoot · {shotsLeft} shot{shotsLeft !== 1 ? 's' : ''} left
+        <div className="border-t border-white/8 bg-surface-0 px-4 py-3">
+          <p className="text-center font-display text-sm font-800 uppercase text-gray-400">
+            {shotsLeft} shot{shotsLeft !== 1 ? 's' : ''} left {playMode === 'friend' && targetScore !== null ? `- beat ${targetScore}` : ''}
           </p>
         </div>
       </div>
     )
   }
 
-  // ── Finished screen ────────────────────────────────────────────────────────
-
   if (phase === 'finished') {
     const totalShots = AR_MODE.SHOTS_PER_SESSION
-    const goals = shotHistory.filter((s) => s === 'goal').length
-    const success = goals >= AR_MODE.GOALS_TO_WIN
+    const success = playMode === 'friend'
+      ? targetScore === null ? goalsScored >= AR_MODE.GOALS_TO_WIN : goalsScored > targetScore
+      : goalsScored >= AR_MODE.GOALS_TO_WIN
 
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center gap-6">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5 }}>
-          <div className="text-7xl mb-2">{success ? '🏆' : '😤'}</div>
-          <h1 className={`font-display font-900 text-4xl uppercase ${success ? 'text-brand' : 'text-red-400'}`}>
-            {success ? 'Outstanding!' : 'So Close!'}
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 text-center">
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+          <div className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl ${success ? 'bg-brand/15' : 'bg-red-500/10'}`}>
+            <Trophy className={success ? 'text-brand' : 'text-red-400'} size={34} />
+          </div>
+          <h1 className={`font-display text-4xl font-900 uppercase ${success ? 'text-brand' : 'text-red-400'}`}>
+            {success ? 'Clinical' : 'Denied'}
           </h1>
-          <p className="text-gray-400 text-lg mt-1">{goals} / {totalShots} goals scored</p>
+          <p className="mt-1 text-lg text-gray-400">{goalsScored} / {totalShots} scored</p>
+          {playMode === 'friend' && targetScore !== null && (
+            <p className="mt-1 text-sm text-gray-500">Friend target: {targetScore}</p>
+          )}
         </motion.div>
 
-        {/* Shot breakdown */}
-        <div className="flex gap-2 justify-center">
-          {shotHistory.map((s, i) => (
-            <div key={i} className={`w-10 h-10 rounded-full flex items-center justify-center text-xl border-2 ${s === 'goal' ? 'border-green-400 bg-green-400/20' : 'border-red-400 bg-red-400/20'}`}>
-              {s === 'goal' ? '⚽' : '🧤'}
+        <div className="flex justify-center gap-2">
+          {shotHistory.map((shot, index) => (
+            <div
+              key={index}
+              className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-display font-900 ${
+                shot.outcome === 'goal' ? 'border-green-400 bg-green-400/20 text-green-300' : 'border-red-400 bg-red-400/20 text-red-300'
+              }`}
+            >
+              {shot.outcome === 'goal' ? 'G' : 'X'}
             </div>
           ))}
         </div>
 
-        {sessionResult && (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-surface-2 border border-white/8 rounded-2xl p-4 w-full max-w-sm"
-          >
-            <div className="flex gap-3 justify-center">
-              <div className="bg-surface-3 rounded-xl px-5 py-2 text-center">
-                <p className="font-display font-900 text-xl text-brand">+{sessionResult.xpGained}</p>
+        {playMode === 'solo' && sessionResult && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm rounded-2xl border border-white/8 bg-surface-2 p-4">
+            <div className="flex justify-center gap-3">
+              <div className="rounded-xl bg-surface-3 px-5 py-2">
+                <p className="font-display text-xl font-900 text-brand">+{sessionResult.xpGained}</p>
                 <p className="text-[10px] text-gray-400">XP</p>
               </div>
               {sessionResult.coinsGained > 0 && (
-                <div className="bg-surface-3 rounded-xl px-5 py-2 text-center">
-                  <p className="font-display font-900 text-xl text-yellow-300">+{sessionResult.coinsGained}</p>
+                <div className="rounded-xl bg-surface-3 px-5 py-2">
+                  <p className="font-display text-xl font-900 text-yellow-300">+{sessionResult.coinsGained}</p>
                   <p className="text-[10px] text-gray-400">Coins</p>
                 </div>
               )}
             </div>
-            {!success && (
-              <p className="text-xs text-gray-500 mt-3">Next session available in {AR_MODE.SESSION_COOLDOWN_HOURS}h</p>
-            )}
+            {!success && <p className="mt-3 text-xs text-gray-500">Next solo session available in {AR_MODE.SESSION_COOLDOWN_HOURS}h</p>}
           </motion.div>
         )}
 
-        <div className="flex gap-3 w-full max-w-sm">
-          {!success && (
-            <Link href="/scan" className="flex-1 flex items-center justify-center gap-1.5 bg-red-600/20 border border-red-600/30 text-red-400 font-display font-700 uppercase py-3 rounded-xl text-sm">
-              <QrCode size={14} /> Skip Cooldown
+        {playMode === 'friend' && (
+          <button
+            onClick={shareFriendChallenge}
+            className="flex w-full max-w-sm items-center justify-center gap-2 rounded-2xl border border-white/10 bg-surface-2 py-3.5 font-display font-800 uppercase"
+          >
+            <Share2 size={16} />
+            Challenge Friend
+          </button>
+        )}
+
+        <div className="flex w-full max-w-sm gap-3">
+          {playMode === 'solo' && !success && (
+            <Link href="/scan" className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-600/30 bg-red-600/20 py-3 font-display text-sm font-700 uppercase text-red-400">
+              <QrCode size={14} />
+              Skip Cooldown
             </Link>
           )}
-          <button
-            onClick={() => { setPhase('idle'); setGoalsScored(0); setShotsLeft(AR_MODE.SHOTS_PER_SESSION); setShotHistory([]); setSessionResult(null) }}
-            className="flex-1 bg-brand text-black font-display font-800 uppercase py-3 rounded-xl"
-          >
-            {success ? 'Play Again' : 'Back'}
+          <button onClick={() => resetSession(playMode)} className="flex-1 rounded-xl bg-brand py-3 font-display font-900 uppercase text-black">
+            Back
           </button>
         </div>
+
+        {isPending && <LoadingSpinner size={18} />}
       </div>
     )
   }
