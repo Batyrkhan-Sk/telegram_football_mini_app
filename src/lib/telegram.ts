@@ -18,21 +18,13 @@ export function getTelegramWebApp() {
 }
 
 export function getTelegramUser(): TelegramUser | null {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
+    return { id: 100000001, first_name: 'Arman', last_name: 'Demo', username: 'kairat_fan' }
+  }
   const twa = getTelegramWebApp() as { initDataUnsafe?: { user?: TelegramUser } } | null
   if (twa?.initDataUnsafe?.user) {
     return twa.initDataUnsafe.user
   }
-
-  // Demo mode: return a mock user for local dev
-  if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
-    return {
-      id: 100000001,
-      first_name: 'Arman',
-      last_name: 'Demo',
-      username: 'kairat_fan',
-    }
-  }
-
   return null
 }
 
