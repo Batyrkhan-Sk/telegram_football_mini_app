@@ -47,10 +47,10 @@ function GoalNet({ onShoot }: { onShoot: (zone: string) => void }) {
         }}
         style={{ left: '50%', transform: 'translateX(-50%)', bottom: '5%' }}
       >
-        GK
+        🧤
       </motion.div>
 
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-2xl">o</div>
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-2xl">⚽</div>
     </div>
   )
 }
@@ -139,8 +139,8 @@ export default function ArPage() {
 
           <div className="pitch-bg mb-6 rounded-3xl p-6">
             <div className="relative mx-auto flex aspect-[2/1] w-full max-w-xs items-center justify-center rounded-t-xl border-4 border-white/20">
-              <div className="text-4xl">GK</div>
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-3xl">o</div>
+              <div className="text-6xl">🧤</div>
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-3xl">⚽</div>
             </div>
           </div>
 
@@ -216,7 +216,7 @@ export default function ArPage() {
                     'border-white/20 bg-surface-3'
                   }`}
                 >
-                  {shot === 'goal' ? 'G' : shot === 'save' ? 'S' : ''}
+                  {shot === 'goal' ? '⚽' : shot === 'save' ? '×' : ''}
                 </div>
               )
             })}
@@ -227,7 +227,7 @@ export default function ArPage() {
           </div>
         </div>
 
-        <div className="pitch-bg flex flex-1 flex-col items-center justify-center gap-4 px-4">
+        <div className="pitch-bg relative flex flex-1 flex-col items-center justify-center gap-4 px-4">
           <AnimatePresence>
             {lastShot && (
               <motion.div
@@ -235,7 +235,7 @@ export default function ArPage() {
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 1.5, opacity: 0 }}
-                className="mb-2 text-center"
+                className="pointer-events-none absolute left-0 right-0 top-[22%] z-20 text-center"
               >
                 <p className={`font-display text-4xl font-900 ${lastShot === 'goal' ? 'text-green-400' : 'text-red-400'}`}>
                   {lastShot === 'goal' ? 'GOAL!' : 'SAVED!'}
@@ -272,7 +272,7 @@ export default function ArPage() {
         <div className="flex justify-center gap-2">
           {shotHistory.map((s, i) => (
             <div key={i} className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-xl ${s === 'goal' ? 'border-green-400 bg-green-400/20' : 'border-red-400 bg-red-400/20'}`}>
-              {s === 'goal' ? 'G' : 'S'}
+              {s === 'goal' ? '⚽' : '×'}
             </div>
           ))}
         </div>
