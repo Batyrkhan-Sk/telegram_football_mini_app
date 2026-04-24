@@ -1,30 +1,51 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, ChevronLeft, ChevronRight, Sparkles, User2 } from 'lucide-react'
+import {
+  Camera,
+  Check,
+  ImagePlus,
+  RefreshCw,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Upload,
+  UserRound,
+  Wand2,
+} from 'lucide-react'
 import { useUserStore, useCharacterStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
-import { StatBar, SectionHeader, LoadingSpinner, Badge } from '@/components/ui'
+import { StatBar, SectionHeader, LoadingSpinner } from '@/components/ui'
 import { hapticFeedback } from '@/lib/telegram'
 import type { CharacterDraft } from '@/store'
 import type { Character } from '@/types'
 
-// ─── Asset options ──────────────────────────────────────────────────────────────
+type SourceMode = 'preset' | 'photo'
+type GenerationState = 'idle' | 'analyzing' | 'reconstructing' | 'ready'
+
+interface IdentityProfile {
+  source: SourceMode
+  seed: number
+  confidence: number
+  faceShape: string
+  featureFocus: string
+  colorNote: string
+}
 
 const HAIRSTYLES = [
-  { id: 'style1', label: 'Buzz Cut', emoji: '💈' },
-  { id: 'style2', label: 'Mohawk', emoji: '🔥' },
-  { id: 'style3', label: 'Waves', emoji: '🌊' },
-  { id: 'style4', label: 'Afro', emoji: '⭕' },
+  { id: 'style1', label: 'Buzz Cut', description: 'Clean silhouette' },
+  { id: 'style2', label: 'Mohawk', description: 'Tall center shape' },
+  { id: 'style3', label: 'Waves', description: 'Soft movement' },
+  { id: 'style4', label: 'Afro', description: 'Rounded volume' },
 ]
 
 const FACE_TYPES = [
-  { id: 'face1', label: 'Sharp', emoji: '😤' },
-  { id: 'face2', label: 'Cool', emoji: '😎' },
-  { id: 'face3', label: 'Fierce', emoji: '😠' },
-  { id: 'face4', label: 'Calm', emoji: '🧘' },
+  { id: 'face1', label: 'Sharp', description: 'Angular jaw' },
+  { id: 'face2', label: 'Cool', description: 'Balanced oval' },
+  { id: 'face3', label: 'Fierce', description: 'Strong brow' },
+  { id: 'face4', label: 'Calm', description: 'Soft cheeks' },
 ]
 
 const SKIN_TONES = [
@@ -42,153 +63,262 @@ const JERSEY_STYLES = [
 ]
 
 const DOMINANT_ATTRS = [
-  { id: 'speed', label: 'Speed', emoji: '⚡', desc: 'Fastest on the pitch' },
-  { id: 'shot', label: 'Shot', emoji: '🎯', desc: 'Clinical finisher' },
-  { id: 'dribbling', label: 'Dribbling', emoji: '🌀', desc: 'Skill merchant' },
-  { id: 'physical', label: 'Physical', emoji: '💪', desc: 'Powerhouse' },
-  { id: 'defense', label: 'Defense', emoji: '🛡️', desc: 'Rock solid' },
+  { id: 'speed', label: 'Speed', desc: 'Fastest on the pitch' },
+  { id: 'shot', label: 'Shot', desc: 'Clinical finisher' },
+  { id: 'dribbling', label: 'Dribbling', desc: 'Skill creator' },
+  { id: 'physical', label: 'Physical', desc: 'Power forward' },
+  { id: 'defense', label: 'Defense', desc: 'Rock solid' },
 ]
 
+const PRESETS = [
+  {
+    id: 'academy',
+    label: 'Academy Ace',
+    description: 'Bright, quick, youthful striker profile',
+    draft: { hairstyle: 'style1', faceType: 'face2', skinTone: 'tone2', jerseyStyle: 'jersey1', dominantAttr: 'speed' },
+  },
+  {
+    id: 'captain',
+    label: 'Club Captain',
+    description: 'Composed leader with balanced features',
+    draft: { hairstyle: 'style3', faceType: 'face4', skinTone: 'tone3', jerseyStyle: 'jersey3', dominantAttr: 'defense' },
+  },
+  {
+    id: 'finisher',
+    label: 'Final Boss',
+    description: 'Bold silhouette and attacking identity',
+    draft: { hairstyle: 'style2', faceType: 'face3', skinTone: 'tone4', jerseyStyle: 'jersey4', dominantAttr: 'shot' },
+  },
+] as const
+
 const ATTR_STATS: Record<string, Record<string, number>> = {
-  speed:    { speed: 82, shot: 65, dribbling: 75, physical: 60, defense: 55 },
-  shot:     { speed: 68, shot: 84, dribbling: 70, physical: 62, defense: 52 },
-  dribbling:{ speed: 72, shot: 68, dribbling: 86, physical: 58, defense: 55 },
+  speed: { speed: 82, shot: 65, dribbling: 75, physical: 60, defense: 55 },
+  shot: { speed: 68, shot: 84, dribbling: 70, physical: 62, defense: 52 },
+  dribbling: { speed: 72, shot: 68, dribbling: 86, physical: 58, defense: 55 },
   physical: { speed: 65, shot: 62, dribbling: 60, physical: 85, defense: 72 },
-  defense:  { speed: 60, shot: 52, dribbling: 58, physical: 75, defense: 85 },
+  defense: { speed: 60, shot: 52, dribbling: 58, physical: 75, defense: 85 },
 }
 
-// ─── Avatar preview component ──────────────────────────────────────────────────
+function hashString(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
 
-function AvatarPreview({ draft, animeMode }: { draft: CharacterDraft, animeMode: boolean }) {
+function pickBySeed<T>(items: T[], seed: number, offset = 0) {
+  return items[(seed + offset) % items.length]
+}
+
+function buildIdentityProfile(source: SourceMode, seed: number, colorNote = 'warm neutral palette'): IdentityProfile {
+  const faceShape = pickBySeed(['oval', 'angular', 'round', 'long'], seed, 1)
+  const featureFocus = pickBySeed(['brow line', 'cheek shape', 'hair silhouette', 'eye spacing'], seed, 2)
+  return {
+    source,
+    seed,
+    confidence: 76 + (seed % 18),
+    faceShape,
+    featureFocus,
+    colorNote,
+  }
+}
+
+function draftFromSeed(seed: number): Partial<CharacterDraft> {
+  return {
+    hairstyle: pickBySeed(HAIRSTYLES, seed, 1).id,
+    faceType: pickBySeed(FACE_TYPES, seed, 2).id,
+    skinTone: pickBySeed(SKIN_TONES, seed, 3).id,
+    jerseyStyle: pickBySeed(JERSEY_STYLES, seed, 4).id,
+    dominantAttr: pickBySeed(DOMINANT_ATTRS, seed, 5).id,
+  }
+}
+
+async function analyzeImage(file: File): Promise<{ seed: number; preview: string; colorNote: string; toneId: string }> {
+  const preview = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = preview
+  })
+
+  const canvas = document.createElement('canvas')
+  const size = 32
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+  context?.drawImage(image, 0, 0, size, size)
+  const pixels = context?.getImageData(0, 0, size, size).data
+
+  let red = 0
+  let green = 0
+  let blue = 0
+  let count = 0
+  if (pixels) {
+    for (let index = 0; index < pixels.length; index += 4) {
+      red += pixels[index]
+      green += pixels[index + 1]
+      blue += pixels[index + 2]
+      count += 1
+    }
+  }
+
+  red = Math.round(red / Math.max(count, 1))
+  green = Math.round(green / Math.max(count, 1))
+  blue = Math.round(blue / Math.max(count, 1))
+
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+  const toneId = luminance > 185 ? 'tone1' : luminance > 135 ? 'tone2' : luminance > 90 ? 'tone3' : 'tone4'
+  const colorNote = red > blue ? 'warm facial palette' : 'cool balanced palette'
+  const seed = hashString(`${file.name}-${file.size}-${file.lastModified}-${red}-${green}-${blue}-${image.width}-${image.height}`)
+
+  return { seed, preview, colorNote, toneId }
+}
+
+function AvatarPreview({
+  draft,
+  animeMode,
+  photoPreview,
+  identity,
+}: {
+  draft: CharacterDraft
+  animeMode: boolean
+  photoPreview: string | null
+  identity: IdentityProfile | null
+}) {
   const jersey = JERSEY_STYLES.find((j) => j.id === draft.jerseyStyle)
   const skin = SKIN_TONES.find((s) => s.id === draft.skinTone)
-  const attribute = DOMINANT_ATTRS.find((attr) => attr.id === draft.dominantAttr)
+  const face = FACE_TYPES.find((f) => f.id === draft.faceType)
   const hairColorMap: Record<string, string> = {
     style1: '#F5C518',
-    style2: '#FB7185',
+    style2: '#C8102E',
     style3: '#38BDF8',
-    style4: '#C084FC',
+    style4: '#7C3AED',
   }
   const hairColor = hairColorMap[draft.hairstyle] ?? '#F5C518'
+  const eyeScale = animeMode ? 'scale-x-125 scale-y-150' : ''
+  const headShape = draft.faceType === 'face1' ? '42% 42% 48% 48%' : draft.faceType === 'face4' ? '50%' : '45%'
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: [1, 1.02, 1] }}
-      transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
-      className={`relative overflow-hidden rounded-3xl p-6 border ${animeMode ? 'border-purple-500/20' : 'border-yellow-400/20'}`}
-      style={{ background: animeMode ? 'radial-gradient(circle at top, rgba(168,85,247,0.18), transparent 45%)' : 'radial-gradient(circle at top, rgba(245,197,24,0.16), transparent 45%)' }}
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className={`relative overflow-hidden rounded-2xl border p-5 ${animeMode ? 'border-violet-400/40' : 'border-brand/35'}`}
+      style={{ background: animeMode ? 'linear-gradient(145deg, #100E18, #050505 62%)' : 'linear-gradient(145deg, #101310, #050505 62%)' }}
     >
-      <div className="absolute inset-0 opacity-20 pointer-events-none">
-        <div className="absolute left-4 top-8 w-16 h-16 rounded-full bg-white/5 blur-2xl" />
-        <div className="absolute right-5 top-10 w-12 h-12 rounded-full bg-white/5 blur-2xl" />
-        {animeMode &&
-          [...Array(5)].map((_, index) => (
-            <motion.div
-              key={index}
-              className="absolute rounded-full bg-white/25"
-              style={{ width: 10 + index * 4, height: 10 + index * 4, top: `${15 + index * 12}%`, left: `${10 + (index % 2) * 30}%` }}
-              animate={{ opacity: [0.3, 0.9, 0.3], y: [0, -6, 0] }}
-              transition={{ duration: 3, repeat: Infinity, delay: index * 0.2 }}
-            />
-          ))}
+      <div className="absolute inset-0 pointer-events-none opacity-40">
+        <div className="absolute inset-x-0 top-0 h-24 bg-brand/10" />
+        {animeMode && <div className="absolute right-0 top-0 h-28 w-28 bg-violet-500/15 blur-3xl" />}
       </div>
 
-      <motion.div
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className="relative z-10 flex flex-col items-center gap-3"
-      >
-        <div className="relative w-36 h-36 rounded-full shadow-[0_12px_60px_-30px_rgba(0,0,0,0.45)]" style={{ background: '#111827' }}>
-          <motion.div
-            className="absolute inset-x-8 top-4 h-16 rounded-full"
-            style={{ background: hairColor }}
-            animate={{ rotate: animeMode ? [2, -2, 2] : [0] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <div className="absolute left-1/2 top-12 -translate-x-1/2 w-24 h-24 rounded-full border-4" style={{ background: skin?.hex ?? '#C68642', borderColor: animeMode ? '#A855F7' : '#F5C518' }}>
-            <div className="absolute inset-x-0 top-8 flex items-center justify-between px-6">
-              <div className="w-3 h-3 rounded-full bg-black" />
-              <div className="w-3 h-3 rounded-full bg-black" />
-            </div>
-            <div className="absolute left-1/2 top-16 -translate-x-1/2 w-8 h-2 rounded-full bg-black/90" />
-            <div className="absolute inset-x-0 top-2 flex justify-center">
-              <div className="w-10 h-4 rounded-full bg-white/30" />
-            </div>
+      <div className="relative z-10 grid grid-cols-[92px_1fr] gap-4 items-center">
+        <div className="space-y-2">
+          <div className="relative mx-auto h-20 w-20 overflow-hidden rounded-xl border border-white/10 bg-surface-3">
+            {photoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoPreview} alt="Uploaded reference" className="h-full w-full object-cover opacity-85" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <UserRound className="text-gray-500" size={34} />
+              </div>
+            )}
           </div>
-          <motion.div
-            className="absolute left-4 bottom-8 w-8 h-8 rounded-full bg-white/10"
-            animate={{ x: [0, 6, 0], opacity: [0.5, 1, 0.5] }}
-            transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <motion.div
-            className="absolute right-3 bottom-10 w-5 h-5 rounded-full bg-white/15"
-            animate={{ y: [0, -4, 0], opacity: [0.6, 1, 0.6] }}
-            transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-          />
+          <div className="rounded-full bg-white/5 px-2 py-1 text-center text-[9px] uppercase text-gray-400">
+            {identity?.source === 'photo' ? 'Reference' : 'Preset'}
+          </div>
         </div>
 
-        <motion.div
-          animate={{ rotate: [-1, 1, -1] }}
-          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-          className="relative w-44 h-24 rounded-[32px] overflow-hidden border-4"
-          style={{ background: jersey?.color ?? '#F5C518', borderColor: animeMode ? '#A855F7' : '#F5C518' }}
-        >
-          <div className="absolute inset-x-10 top-4 h-8 rounded-full bg-white/25" />
-          <div className="absolute left-10 top-3 w-8 h-8 rounded-full bg-white/50" />
-          <div className="absolute right-10 top-3 w-8 h-8 rounded-full bg-white/50" />
-        </motion.div>
+        <div className="flex min-h-[250px] flex-col items-center justify-center">
+          <motion.div
+            animate={{ y: [0, -5, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            className="relative h-36 w-36"
+          >
+            <div className="absolute inset-0 rounded-full bg-slate-900" />
+            <div className="absolute left-1/2 top-5 h-20 w-24 -translate-x-1/2 rounded-t-full" style={{ background: hairColor }} />
+            {draft.hairstyle === 'style2' && <div className="absolute left-1/2 top-0 h-16 w-10 -translate-x-1/2 rounded-t-full bg-red-500" />}
+            {draft.hairstyle === 'style4' && <div className="absolute left-4 top-2 h-28 w-28 rounded-full bg-violet-600" />}
+            <div
+              className={`absolute left-1/2 top-12 h-24 w-24 -translate-x-1/2 border-4 ${animeMode ? 'border-violet-300 shadow-[0_0_28px_rgba(167,139,250,0.25)]' : 'border-brand'}`}
+              style={{ background: skin?.hex ?? '#C68642', borderRadius: headShape }}
+            >
+              <div className="absolute inset-x-0 top-7 flex justify-between px-6">
+                <div className={`h-3 w-3 rounded-full bg-black ${eyeScale}`} />
+                <div className={`h-3 w-3 rounded-full bg-black ${eyeScale}`} />
+              </div>
+              {animeMode && (
+                <div className="absolute inset-x-0 top-8 flex justify-between px-[25px]">
+                  <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                  <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                </div>
+              )}
+              <div className={`absolute left-1/2 top-16 -translate-x-1/2 rounded-full bg-black ${animeMode ? 'h-1.5 w-7' : 'h-2 w-8'}`} />
+              <div className="absolute inset-x-0 top-3 flex justify-center">
+                <div className={`h-3 rounded-full bg-white/25 ${draft.faceType === 'face3' ? 'w-14' : 'w-10'}`} />
+              </div>
+              {identity?.source === 'photo' && <div className="absolute right-3 top-12 h-3 w-1.5 rounded-full bg-black/20" />}
+            </div>
+          </motion.div>
 
-        <div className="flex items-center gap-2 rounded-full bg-black/20 px-4 py-2 text-[11px] uppercase tracking-[0.18em] text-white">
-          <span className="font-800">{draft.nickname || 'YOUR HERO'}</span>
-          <span className={animeMode ? 'text-purple-300' : 'text-yellow-300'}>{attribute?.emoji}</span>
+          <div
+            className={`relative mt-[-8px] h-24 w-48 overflow-hidden border-4 ${animeMode ? 'rounded-[30px] border-violet-300' : 'rounded-[28px] border-brand'}`}
+            style={{ background: jersey?.color ?? '#F5C518' }}
+          >
+            <div className="absolute inset-x-12 top-5 h-8 rounded-full bg-white/25" />
+            <div className="absolute left-9 top-4 h-8 w-8 rounded-full bg-white/45" />
+            <div className="absolute right-9 top-4 h-8 w-8 rounded-full bg-white/45" />
+            {animeMode && <div className="absolute inset-x-0 bottom-0 h-8 bg-black/20" />}
+          </div>
+
+          <div className="mt-4 flex items-center gap-2 rounded-full bg-black/30 px-4 py-2">
+            <span className="text-[11px] font-800 uppercase tracking-[0.16em]">{draft.nickname || 'Your Hero'}</span>
+            <span className="text-[10px] text-gray-400">{face?.label}</span>
+          </div>
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   )
 }
 
-// ─── Option grid component ────────────────────────────────────────────────────
-
-function OptionGrid<T extends { id: string; label: string }>({
-  options,
-  selected,
-  onSelect,
-  renderOption,
+function TraitButton({
+  label,
+  active,
+  children,
+  onClick,
 }: {
-  options: T[]
-  selected: string
-  onSelect: (id: string) => void
-  renderOption: (opt: T) => React.ReactNode
+  label: string
+  active: boolean
+  children: React.ReactNode
+  onClick: () => void
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {options.map((opt) => (
-        <button
-          key={opt.id}
-          onClick={() => onSelect(opt.id)}
-          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
-            selected === opt.id
-              ? 'border-brand bg-brand/15 ring-1 ring-brand'
-              : 'border-white/8 bg-surface-3'
-          }`}
-        >
-          {renderOption(opt)}
-          <span className="text-[11px] font-display font-700 uppercase">{opt.label}</span>
-          {selected === opt.id && <Check size={12} className="text-brand" />}
-        </button>
-      ))}
-    </div>
+    <button
+      onClick={onClick}
+      className={`min-h-[74px] rounded-xl border p-3 text-left transition-all ${active ? 'border-brand bg-brand/15 ring-1 ring-brand' : 'border-white/8 bg-surface-3'}`}
+    >
+      {children}
+      <p className="mt-2 text-[11px] font-display font-800 uppercase">{label}</p>
+    </button>
   )
 }
-
-// ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CharacterPage() {
   const { user } = useUserStore()
   const { draft, updateDraft, setSavedCharacter } = useCharacterStore()
   const qc = useQueryClient()
-  const [step, setStep] = useState(0)
+  const [sourceMode, setSourceMode] = useState<SourceMode>('preset')
+  const [selectedPreset, setSelectedPreset] = useState<string>(PRESETS[0].id)
+  const [generationState, setGenerationState] = useState<GenerationState>('ready')
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [identity, setIdentity] = useState<IdentityProfile | null>(buildIdentityProfile('preset', 12))
   const [saved, setSaved] = useState(false)
   const [isHydrated, setIsHydrated] = useState(false)
 
@@ -207,6 +337,55 @@ export default function CharacterPage() {
     }
   }, [existingData?.data, isHydrated, updateDraft, setSavedCharacter])
 
+  const selectedPresetData = useMemo(
+    () => PRESETS.find((preset) => preset.id === selectedPreset) ?? PRESETS[0],
+    [selectedPreset]
+  )
+
+  const applyPreset = (presetId: string) => {
+    const preset = PRESETS.find((item) => item.id === presetId) ?? PRESETS[0]
+    const seed = hashString(preset.id)
+    setSelectedPreset(preset.id)
+    setSourceMode('preset')
+    setPhotoPreview(null)
+    setIdentity(buildIdentityProfile('preset', seed, preset.description))
+    updateDraft(preset.draft)
+    hapticFeedback('light')
+  }
+
+  const handlePhotoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setSourceMode('photo')
+    setGenerationState('analyzing')
+    setPhotoPreview(null)
+
+    try {
+      const analyzed = await analyzeImage(file)
+      setPhotoPreview(analyzed.preview)
+      setIdentity(buildIdentityProfile('photo', analyzed.seed, analyzed.colorNote))
+      updateDraft({ ...draftFromSeed(analyzed.seed), skinTone: analyzed.toneId })
+      hapticFeedback('medium')
+
+      window.setTimeout(() => setGenerationState('reconstructing'), 450)
+      window.setTimeout(() => {
+        setGenerationState('ready')
+        hapticFeedback('success')
+      }, 1100)
+    } catch (error) {
+      console.error(error)
+      setGenerationState('idle')
+    }
+  }
+
+  const regenerateVariant = () => {
+    const seed = (identity?.seed ?? 10) + 17
+    setIdentity((current) => current ? { ...current, seed, confidence: 74 + (seed % 20) } : buildIdentityProfile(sourceMode, seed))
+    updateDraft(draftFromSeed(seed))
+    hapticFeedback('light')
+  }
+
   const { mutate: saveCharacter, isPending } = useMutation({
     mutationFn: () =>
       fetch('/api/character', {
@@ -224,197 +403,251 @@ export default function CharacterPage() {
     },
   })
 
-  const steps = [
-    {
-      title: 'Hairstyle',
-      content: (
-        <OptionGrid
-          options={HAIRSTYLES}
-          selected={draft.hairstyle}
-          onSelect={(id) => updateDraft({ hairstyle: id })}
-          renderOption={(opt) => <span className="text-2xl">{opt.emoji}</span>}
-        />
-      ),
-    },
-    {
-      title: 'Face Type',
-      content: (
-        <OptionGrid
-          options={FACE_TYPES}
-          selected={draft.faceType}
-          onSelect={(id) => updateDraft({ faceType: id })}
-          renderOption={(opt) => <span className="text-2xl">{opt.emoji}</span>}
-        />
-      ),
-    },
-    {
-      title: 'Skin Tone',
-      content: (
-        <div className="grid grid-cols-4 gap-2">
-          {SKIN_TONES.map((tone) => (
-            <button
-              key={tone.id}
-              onClick={() => updateDraft({ skinTone: tone.id })}
-              className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border transition-all ${
-                draft.skinTone === tone.id ? 'border-brand ring-1 ring-brand' : 'border-white/8'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-full border-2 border-white/20" style={{ background: tone.hex }} />
-              <span className="text-[10px] font-display font-700 uppercase">{tone.label}</span>
-            </button>
-          ))}
-        </div>
-      ),
-    },
-    {
-      title: 'Jersey',
-      content: (
-        <OptionGrid
-          options={JERSEY_STYLES}
-          selected={draft.jerseyStyle}
-          onSelect={(id) => updateDraft({ jerseyStyle: id })}
-          renderOption={(opt) => (
-            <div className="w-10 h-8 rounded-lg border-2 border-white/20" style={{ background: opt.color }} />
-          )}
-        />
-      ),
-    },
-    {
-      title: 'Dominant Attribute',
-      content: (
-        <div className="space-y-2">
-          {DOMINANT_ATTRS.map((attr) => (
-            <button
-              key={attr.id}
-              onClick={() => updateDraft({ dominantAttr: attr.id })}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                draft.dominantAttr === attr.id ? 'border-brand bg-brand/15' : 'border-white/8 bg-surface-3'
-              }`}
-            >
-              <span className="text-2xl">{attr.emoji}</span>
-              <div className="flex-1 text-left">
-                <p className="font-display font-800 text-sm uppercase">{attr.label}</p>
-                <p className="text-[10px] text-gray-400">{attr.desc}</p>
-              </div>
-              {draft.dominantAttr === attr.id && <Check size={16} className="text-brand" />}
-            </button>
-          ))}
-        </div>
-      ),
-    },
-  ]
+  const isGenerating = generationState === 'analyzing' || generationState === 'reconstructing'
 
   if (saved) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center gap-6">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5 }}>
-          <div className="text-7xl mb-2">🎉</div>
-          <h1 className="font-display font-900 text-3xl uppercase text-brand">Player Created!</h1>
-          <p className="text-gray-400 text-sm mt-2">Your custom character is ready to battle.</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-5 px-4 pb-24 text-center">
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/15">
+            <ShieldCheck className="text-brand" size={34} />
+          </div>
+          <h1 className="font-display text-3xl font-900 uppercase text-brand">Player Saved</h1>
+          <p className="mt-2 text-sm text-gray-400">Your character identity is ready for the pitch.</p>
         </motion.div>
-        <AvatarPreview draft={draft} animeMode={draft.animeMode} />
-        <div className="w-full bg-surface-2 border border-white/8 rounded-2xl p-4 space-y-2">
-          {Object.entries(ATTR_STATS[draft.dominantAttr] ?? {}).map(([stat, val]) => (
-            <StatBar key={stat} label={stat} value={val} />
+        <AvatarPreview draft={draft} animeMode={draft.animeMode} photoPreview={photoPreview} identity={identity} />
+        <div className="w-full rounded-2xl border border-white/8 bg-surface-2 p-4">
+          {Object.entries(ATTR_STATS[draft.dominantAttr] ?? {}).map(([stat, value]) => (
+            <StatBar key={stat} label={stat} value={value} />
           ))}
         </div>
-        <button onClick={() => setSaved(false)} className="w-full bg-brand text-black font-display font-800 uppercase py-3.5 rounded-2xl">
+        <button onClick={() => setSaved(false)} className="w-full rounded-2xl bg-brand py-3.5 font-display font-800 uppercase text-black">
           Edit Character
         </button>
+        <BottomNav />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-24">
+    <div className="flex min-h-screen flex-col pb-24">
       <div className="px-4 pt-4">
-        <SectionHeader title="Create Player" subtitle="Build your custom character" />
-        {existingData?.data && !saved && (
-          <p className="text-xs text-gray-400 mb-4">Saved player loaded — edit your anime-style avatar and save to update it.</p>
-        )}
+        <SectionHeader title="Create Player" subtitle="Choose a base, generate a look, refine the details" />
 
-        {/* Nickname input */}
         <div className="mb-4">
-          <label className="text-[11px] font-display uppercase text-gray-400 block mb-1.5">Nickname</label>
+          <label className="mb-1.5 block text-[11px] font-display uppercase text-gray-400">Nickname</label>
           <input
             type="text"
             value={draft.nickname}
-            onChange={(e) => updateDraft({ nickname: e.target.value })}
+            onChange={(event) => updateDraft({ nickname: event.target.value })}
             placeholder="Your player name..."
             maxLength={20}
-            className="w-full bg-surface-3 border border-white/8 rounded-xl px-3 py-2.5 font-display font-700 text-base uppercase tracking-wide focus:outline-none focus:border-brand transition-colors placeholder:text-gray-600"
+            className="w-full rounded-xl border border-white/8 bg-surface-3 px-3 py-2.5 font-display text-base font-700 uppercase tracking-wide placeholder:text-gray-600 focus:border-brand focus:outline-none"
           />
         </div>
 
-        {/* Anime mode toggle */}
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <button
+            onClick={() => applyPreset(selectedPreset)}
+            className={`flex items-center justify-center gap-2 rounded-xl border py-3 font-display font-800 uppercase ${sourceMode === 'preset' ? 'border-brand bg-brand/15 text-brand' : 'border-white/8 bg-surface-3 text-gray-400'}`}
+          >
+            <UserRound size={16} />
+            Presets
+          </button>
+          <label
+            className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border py-3 font-display font-800 uppercase ${sourceMode === 'photo' ? 'border-brand bg-brand/15 text-brand' : 'border-white/8 bg-surface-3 text-gray-400'}`}
+          >
+            <Upload size={16} />
+            Photo
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+          </label>
+        </div>
+
+        <AnimatePresence mode="wait">
+          {sourceMode === 'preset' ? (
+            <motion.div
+              key="presets"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-4 grid gap-2"
+            >
+              {PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => applyPreset(preset.id)}
+                  className={`rounded-xl border p-3 text-left transition-all ${selectedPresetData.id === preset.id ? 'border-brand bg-brand/15' : 'border-white/8 bg-surface-3'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black/20">
+                      <Wand2 size={18} className={selectedPresetData.id === preset.id ? 'text-brand' : 'text-gray-400'} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-display font-800 uppercase">{preset.label}</p>
+                      <p className="text-xs text-gray-400">{preset.description}</p>
+                    </div>
+                    {selectedPresetData.id === preset.id && <Check size={16} className="text-brand" />}
+                  </div>
+                </button>
+              ))}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="photo"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-4 rounded-2xl border border-white/8 bg-surface-2 p-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10">
+                  {photoPreview ? <Camera size={20} className="text-brand" /> : <ImagePlus size={20} className="text-brand" />}
+                </div>
+                <div className="flex-1">
+                  <p className="font-display font-800 uppercase">Photo to Character</p>
+                  <p className="text-xs text-gray-400">Upload a clear face photo. The same image keeps the same identity seed.</p>
+                </div>
+                <label className="rounded-lg bg-white/10 px-3 py-2 text-[11px] font-display font-800 uppercase">
+                  Replace
+                  <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                </label>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <button
           onClick={() => updateDraft({ animeMode: !draft.animeMode })}
-          className={`flex items-center gap-2 mb-4 px-3 py-2 rounded-xl border transition-all ${
-            draft.animeMode ? 'border-purple-500 bg-purple-500/15 text-purple-300' : 'border-white/8 bg-surface-3 text-gray-400'
-          }`}
+          className={`mb-4 flex w-full items-center gap-2 rounded-xl border px-3 py-3 transition-all ${draft.animeMode ? 'border-violet-400 bg-violet-500/15 text-violet-200' : 'border-white/8 bg-surface-3 text-gray-300'}`}
         >
-          <Sparkles size={14} />
-          <span className="font-display font-700 text-sm uppercase">Anime Mode</span>
-          <div className={`ml-auto w-8 h-4 rounded-full transition-all ${draft.animeMode ? 'bg-purple-500' : 'bg-surface-1'}`}>
-            <div className={`w-4 h-4 rounded-full bg-white transition-transform ${draft.animeMode ? 'translate-x-4' : ''}`} />
+          <Sparkles size={16} />
+          <span className="font-display font-800 uppercase">Anime Mode</span>
+          <span className="ml-auto text-xs text-gray-400">{draft.animeMode ? 'Reconstructed style' : 'Sport cartoon style'}</span>
+          <div className={`h-5 w-9 rounded-full ${draft.animeMode ? 'bg-violet-500' : 'bg-surface-1'}`}>
+            <div className={`h-5 w-5 rounded-full bg-white transition-transform ${draft.animeMode ? 'translate-x-4' : ''}`} />
           </div>
         </button>
 
-        {/* Avatar preview */}
         <div className="mb-4">
-          <AvatarPreview draft={draft} animeMode={draft.animeMode} />
+          <AvatarPreview draft={draft} animeMode={draft.animeMode} photoPreview={photoPreview} identity={identity} />
         </div>
 
-        {/* Step content */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display font-800 text-base uppercase text-gray-300">{steps[step].title}</h3>
-            <div className="flex gap-1">
-              {steps.map((_, i) => (
-                <div key={i} className={`h-1 rounded-full transition-all ${i === step ? 'w-6 bg-brand' : 'w-1.5 bg-surface-3'}`} />
+        <div className="mb-4 rounded-2xl border border-white/8 bg-surface-2 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <SlidersHorizontal size={16} className="text-brand" />
+            <h3 className="font-display font-800 uppercase">Identity Controls</h3>
+            <button onClick={regenerateVariant} className="ml-auto flex items-center gap-1 rounded-lg bg-white/8 px-2 py-1 text-[10px] font-display font-800 uppercase">
+              <RefreshCw size={12} />
+              Variant
+            </button>
+          </div>
+
+          {isGenerating ? (
+            <div className="flex items-center gap-3 rounded-xl bg-surface-3 px-3 py-3">
+              <LoadingSpinner size={16} />
+              <div>
+                <p className="text-sm font-display font-800 uppercase">{generationState === 'analyzing' ? 'Analyzing facial anchors' : 'Reconstructing character style'}</p>
+                <p className="text-xs text-gray-400">Preserving silhouette, tone, and distinguishing feature cues.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-surface-3 p-2">
+                <p className="text-[10px] uppercase text-gray-400">Match</p>
+                <p className="font-display text-lg font-900 text-brand">{identity?.confidence ?? 80}%</p>
+              </div>
+              <div className="rounded-xl bg-surface-3 p-2">
+                <p className="text-[10px] uppercase text-gray-400">Shape</p>
+                <p className="font-display text-sm font-800 uppercase">{identity?.faceShape ?? 'oval'}</p>
+              </div>
+              <div className="rounded-xl bg-surface-3 p-2">
+                <p className="text-[10px] uppercase text-gray-400">Anchor</p>
+                <p className="font-display text-sm font-800 uppercase">{identity?.featureFocus ?? 'brow'}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-4 space-y-4">
+          <div>
+            <p className="mb-2 text-[11px] font-display font-800 uppercase text-gray-400">Hairstyle</p>
+            <div className="grid grid-cols-2 gap-2">
+              {HAIRSTYLES.map((option) => (
+                <TraitButton key={option.id} label={option.label} active={draft.hairstyle === option.id} onClick={() => updateDraft({ hairstyle: option.id })}>
+                  <p className="text-xs text-gray-400">{option.description}</p>
+                </TraitButton>
               ))}
             </div>
           </div>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.2 }}
-            >
-              {steps[step].content}
-            </motion.div>
-          </AnimatePresence>
+
+          <div>
+            <p className="mb-2 text-[11px] font-display font-800 uppercase text-gray-400">Face Type</p>
+            <div className="grid grid-cols-2 gap-2">
+              {FACE_TYPES.map((option) => (
+                <TraitButton key={option.id} label={option.label} active={draft.faceType === option.id} onClick={() => updateDraft({ faceType: option.id })}>
+                  <p className="text-xs text-gray-400">{option.description}</p>
+                </TraitButton>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[11px] font-display font-800 uppercase text-gray-400">Skin Tone</p>
+            <div className="grid grid-cols-4 gap-2">
+              {SKIN_TONES.map((tone) => (
+                <button
+                  key={tone.id}
+                  onClick={() => updateDraft({ skinTone: tone.id })}
+                  className={`rounded-xl border p-2 ${draft.skinTone === tone.id ? 'border-brand ring-1 ring-brand' : 'border-white/8 bg-surface-3'}`}
+                >
+                  <div className="mx-auto h-9 w-9 rounded-full border-2 border-white/20" style={{ background: tone.hex }} />
+                  <p className="mt-1 text-[10px] font-display font-700 uppercase">{tone.label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[11px] font-display font-800 uppercase text-gray-400">Jersey</p>
+            <div className="grid grid-cols-2 gap-2">
+              {JERSEY_STYLES.map((jersey) => (
+                <TraitButton key={jersey.id} label={jersey.label} active={draft.jerseyStyle === jersey.id} onClick={() => updateDraft({ jerseyStyle: jersey.id })}>
+                  <div className="h-8 w-12 rounded-lg border border-white/20" style={{ background: jersey.color }} />
+                </TraitButton>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[11px] font-display font-800 uppercase text-gray-400">Dominant Attribute</p>
+            <div className="space-y-2">
+              {DOMINANT_ATTRS.map((attr) => (
+                <button
+                  key={attr.id}
+                  onClick={() => updateDraft({ dominantAttr: attr.id })}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left ${draft.dominantAttr === attr.id ? 'border-brand bg-brand/15' : 'border-white/8 bg-surface-3'}`}
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-black/20 text-xs font-display font-900 uppercase text-brand">
+                    {attr.label.slice(0, 2)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-display font-800 uppercase">{attr.label}</p>
+                    <p className="text-xs text-gray-400">{attr.desc}</p>
+                  </div>
+                  {draft.dominantAttr === attr.id && <Check size={16} className="text-brand" />}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Navigation */}
-        <div className="flex gap-2">
-          {step > 0 && (
-            <button
-              onClick={() => setStep((s) => s - 1)}
-              className="flex items-center gap-1 bg-surface-3 border border-white/8 font-display font-700 uppercase px-4 py-3 rounded-xl"
-            >
-              <ChevronLeft size={16} /> Back
-            </button>
-          )}
-          {step < steps.length - 1 ? (
-            <button
-              onClick={() => setStep((s) => s + 1)}
-              className="flex-1 flex items-center justify-center gap-1 bg-brand text-black font-display font-800 uppercase py-3 rounded-xl"
-            >
-              Next <ChevronRight size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={() => saveCharacter()}
-              disabled={!draft.nickname.trim() || isPending}
-              className="flex-1 flex items-center justify-center gap-2 bg-brand text-black font-display font-800 uppercase py-3 rounded-xl disabled:opacity-40"
-            >
-              {isPending ? <LoadingSpinner size={18} /> : <><Check size={16} /> Save Player</>}
-            </button>
-          )}
-        </div>
+        <button
+          onClick={() => saveCharacter()}
+          disabled={!draft.nickname.trim() || isPending || isGenerating}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand py-3.5 font-display font-900 uppercase text-black disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {isPending ? <LoadingSpinner size={18} /> : <><Check size={16} /> Save Player</>}
+        </button>
       </div>
       <BottomNav />
     </div>
