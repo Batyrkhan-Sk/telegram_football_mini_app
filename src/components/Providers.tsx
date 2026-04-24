@@ -21,29 +21,47 @@ function UserInitializer({ children }: { children: React.ReactNode }) {
 
     expandApp()
 
-    const tgUser = getTelegramUser()
-    if (!tgUser) {
-      setLoading(false)
-      return
+    let cancelled = false
+
+    const initUser = async () => {
+      let tgUser = getTelegramUser()
+
+      for (let attempt = 0; !tgUser && attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        tgUser = getTelegramUser()
+      }
+
+      if (cancelled) return
+
+      if (!tgUser) {
+        setLoading(false)
+        return
+      }
+
+      fetch('/api/user/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegramId: String(tgUser.id),
+          username: tgUser.username,
+          firstName: tgUser.first_name,
+          lastName: tgUser.last_name,
+          avatarUrl: tgUser.photo_url,
+        }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.data) setUser(res.data)
+        })
+        .catch(console.error)
+        .finally(() => setLoading(false))
     }
 
-    fetch('/api/user/init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        telegramId: String(tgUser.id),
-        username: tgUser.username,
-        firstName: tgUser.first_name,
-        lastName: tgUser.last_name,
-        avatarUrl: tgUser.photo_url,
-      }),
-    })
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.data) setUser(res.data)
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    initUser()
+
+    return () => {
+      cancelled = true
+    }
   }, [setUser, setLoading])
 
   return <>{children}</>

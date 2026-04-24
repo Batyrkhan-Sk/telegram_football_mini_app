@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import { Barlow_Condensed, Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/Providers'
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${barlowCondensed.variable} ${inter.variable}`}>
       <head>
-        <script src="https://telegram.org/js/telegram-web-app.js" async />
+        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
       </head>
       <body className="bg-surface-0 text-white font-body antialiased overflow-x-hidden">
         <Providers>{children}</Providers>
