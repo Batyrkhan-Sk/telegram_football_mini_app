@@ -23,6 +23,8 @@ export async function GET(req: NextRequest) {
       orderBy: { acquiredAt: 'desc' },
     })
 
+    const character = await prisma.character.findFirst({ where: { userId: user.id } })
+
     const formatted = userCards.map((uc) => ({
       id: uc.id,
       cardId: uc.cardId,
@@ -34,6 +36,25 @@ export async function GET(req: NextRequest) {
         position: uc.card.position,
         imageUrl: uc.card.imageUrl,
         isCustom: uc.card.isCustom,
+        character: uc.card.isCustom && character ? {
+          id: character.id,
+          userId: character.userId,
+          nickname: character.nickname,
+          hairstyle: character.hairstyle,
+          faceType: character.faceType,
+          skinTone: character.skinTone,
+          jerseyStyle: character.jerseyStyle,
+          dominantAttr: character.dominantAttr,
+          animeMode: character.animeMode,
+          stats: {
+            speed: character.speed,
+            shot: character.shot,
+            dribbling: character.dribbling,
+            physical: character.physical,
+            defense: character.defense,
+          },
+          createdAt: character.createdAt.toISOString(),
+        } : null,
         stats: {
           speed: uc.card.speed,
           shot: uc.card.shot,

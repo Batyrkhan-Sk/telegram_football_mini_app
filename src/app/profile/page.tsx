@@ -47,7 +47,7 @@ export default function ProfilePage() {
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
-      <div className="relative overflow-hidden bg-gradient-to-b from-yellow-950/60 via-surface-2 to-surface-0 px-4 pt-6 pb-8">
+      <div className="relative overflow-visible bg-gradient-to-b from-yellow-950/60 via-surface-2 to-surface-0 px-4 pt-6 pb-8">
         <div className="snickers-strip h-1 absolute top-0 left-0 right-0" />
 
         <div className="flex flex-col items-center text-center gap-3">

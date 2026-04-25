@@ -3,17 +3,30 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 
-const TITLES = ['Мазасыз', 'Душнила', 'Ұмытшақ', 'В тильте', 'Не в теме']
+const TITLES = [
+  { label: 'Мазасыз', icon: '⚡' },
+  { label: 'Душнила', icon: '🧠' },
+  { label: 'Ұмытшақ', icon: '🌀' },
+  { label: 'В тильте', icon: '🔥' },
+  { label: 'Не в теме', icon: '❔' },
+]
+
 const STORAGE_KEY = 'kairat-snickers-title'
 
-export function SnickersTitleSelector({ compact = false }: { compact?: boolean }) {
-  const [selected, setSelected] = useState(TITLES[0])
+export function SnickersTitleSelector({
+  compact = false,
+  editable = true,
+}: {
+  compact?: boolean
+  editable?: boolean
+}) {
+  const [selected, setSelected] = useState(TITLES[0].label)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY)
-    if (saved && TITLES.includes(saved)) setSelected(saved)
+    if (saved && TITLES.some((title) => title.label === saved)) setSelected(saved)
   }, [])
 
   useEffect(() => {
@@ -30,30 +43,41 @@ export function SnickersTitleSelector({ compact = false }: { compact?: boolean }
     setOpen(false)
   }
 
+  const selectedTitle = TITLES.find((title) => title.label === selected) ?? TITLES[0]
+
   return (
-    <div ref={rootRef} className="relative inline-flex">
+    <div ref={rootRef} className="relative z-[80] inline-flex">
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
-        className={`inline-flex items-center gap-1.5 rounded-md border border-brand/40 bg-brand/10 font-display font-800 uppercase text-brand ${
+        onClick={() => editable && setOpen((current) => !current)}
+        className={`inline-flex items-center gap-1.5 rounded-md border border-brand/50 bg-black/40 font-display font-800 uppercase text-brand shadow-[0_0_0_1px_rgba(245,197,24,0.08)] ${
           compact ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1.5 text-xs'
         }`}
       >
-        <span>{selected}</span>
-        <ChevronDown size={compact ? 11 : 13} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        <span aria-hidden="true">{selectedTitle.icon}</span>
+        <span>{selectedTitle.label}</span>
+        {editable && (
+          <ChevronDown
+            size={compact ? 11 : 13}
+            className={open ? 'rotate-180 transition-transform' : 'transition-transform'}
+          />
+        )}
       </button>
 
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-40 overflow-hidden rounded-xl border border-white/12 bg-surface-1 shadow-2xl">
+      {editable && open && (
+        <div className="absolute left-1/2 top-full z-[9999] mt-2 max-h-64 w-48 -translate-x-1/2 overflow-y-auto rounded-xl border border-white/20 bg-surface-0 shadow-2xl">
           {TITLES.map((title) => (
             <button
-              key={title}
+              key={title.label}
               type="button"
-              onClick={() => chooseTitle(title)}
-              className="flex w-full items-center justify-between px-3 py-2 text-left font-display text-xs font-800 uppercase text-white hover:bg-white/8"
+              onClick={() => chooseTitle(title.label)}
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left font-display text-xs font-800 uppercase text-white hover:bg-white/8"
             >
-              {title}
-              {selected === title && <Check size={13} className="text-brand" />}
+              <span className="flex min-w-0 items-center gap-2">
+                <span aria-hidden="true">{title.icon}</span>
+                <span className="truncate">{title.label}</span>
+              </span>
+              {selected === title.label && <Check size={13} className="shrink-0 text-brand" />}
             </button>
           ))}
         </div>

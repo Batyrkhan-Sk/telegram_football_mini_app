@@ -19,6 +19,7 @@ export interface Card {
   position: Position
   imageUrl: string
   isCustom: boolean
+  character?: Character | null
   stats: CardStats
   createdAt: string
 }

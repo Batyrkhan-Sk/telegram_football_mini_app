@@ -94,7 +94,7 @@ export default function HomePage() {
                 <h1 className="font-display font-900 text-xl uppercase leading-none">
                   {user.firstName ?? user.username ?? 'Player'}
                 </h1>
-                <SnickersTitleSelector compact />
+                <SnickersTitleSelector compact editable={false} />
               </div>
               <p className="text-xs text-gray-500 mt-0.5">@{user.username ?? 'player'}</p>
             </div>
