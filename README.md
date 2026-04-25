@@ -3,6 +3,9 @@
 > A production-style MVP for a branded digital collectible card game built around FC Kairat and Snickers.
 
 ---
+# Deploy
+
+Link to deploy: https://t.me/KairatSnickersBot/kairat
 
 ## Product Concept
 
