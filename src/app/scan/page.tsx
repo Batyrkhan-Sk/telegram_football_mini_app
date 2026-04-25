@@ -1,27 +1,28 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { QrCode, CheckCircle, XCircle, Camera, Scan, Sparkles } from 'lucide-react'
 import { useUserStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
 import { SectionHeader, LoadingSpinner } from '@/components/ui'
-import { hapticFeedback } from '@/lib/telegram'
+import { hapticFeedback, scanQrCode } from '@/lib/telegram'
+import { useState } from 'react'
 import type { PromoRedemptionResult } from '@/types'
 
 const DEMO_CODES = [
   'SNICKERS-KAIRAT-2026',
-  'SNICKERS-ДУШНИЛА-01',
-  'SNICKERS-МАЗАСЫЗ-02',
-  'SNICKERS-ВТИЛЬТЕ-03',
+  'SNICKERS-KAIRAT-2024',
+  'MARS-FC-ALPHA',
+  'GOLD-BAR-001',
+  'BYPASS-NOW',
 ]
 
 const REWARD_LABELS: Record<string, { icon: string; label: string; color: string }> = {
   CARD_RESTORE:       { icon: '⚡', label: 'Card Energy Restored', color: 'text-yellow-400' },
   AR_COOLDOWN_BYPASS: { icon: '🎯', label: 'Game Cooldown Removed', color: 'text-green-400' },
-  BONUS_COINS:        { icon: '💰', label: 'Bonus Coins', color: 'text-yellow-300' },
-  BONUS_XP:           { icon: '⭐', label: 'Bonus XP', color: 'text-brand' },
+  BONUS_COINS:        { icon: '💰', label: 'Bonus Coins',          color: 'text-yellow-300' },
+  BONUS_XP:           { icon: '⭐', label: 'Bonus XP',             color: 'text-brand' },
 }
 
 export default function ScanPage() {
@@ -30,9 +31,8 @@ export default function ScanPage() {
   const [code, setCode] = useState('')
   const [result, setResult] = useState<PromoRedemptionResult | null>(null)
   const [error, setError] = useState('')
-  const [isScanning, setIsScanning] = useState(false)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  // true = native scanner opened, false = show manual input fallback
+  const [showManual, setShowManual] = useState(false)
 
   const { data: historyData } = useQuery({
     queryKey: ['scan-history', user?.telegramId],
@@ -67,104 +67,38 @@ export default function ScanPage() {
     },
   })
 
-  const history = historyData?.data ?? []
-
-  const stopCameraScan = () => {
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    setIsScanning(false)
-  }
-
-  const startCameraScan = async () => {
+  const handleNativeScan = () => {
     setError('')
     setResult(null)
 
-    const BarcodeDetector = (window as unknown as {
-      BarcodeDetector?: new (options: { formats: string[] }) => {
-        detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>
-      }
-    }).BarcodeDetector
+    // Try Telegram's native scanner first (iOS + Android)
+    const opened = scanQrCode((scannedCode) => {
+      if (!scannedCode) return
+      setCode(scannedCode)
+      redeem(scannedCode)
+    })
 
-    if (!BarcodeDetector) {
-      setError('QR camera scan is not supported here. Enter the pack code manually.')
-      hapticFeedback('warning')
-      return
-    }
-
-    try {
-      console.log('📷 Starting camera scan...')
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-      })
-      console.log('✅ Camera permission granted, stream started')
-      streamRef.current = stream
-      setIsScanning(true)
-
-      await new Promise((resolve) => window.requestAnimationFrame(resolve))
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-        console.log('✅ Video preview playing')
-      } else {
-        throw new Error('Camera preview is not ready')
-      }
-
-      const detector = new BarcodeDetector({ formats: ['qr_code'] })
-      const scanFrame = async () => {
-        if (!videoRef.current || !streamRef.current) return
-        try {
-          const codes = await detector.detect(videoRef.current)
-          const rawCode = codes[0]?.rawValue?.trim()
-
-          if (rawCode) {
-            console.log('✅ QR code detected:', rawCode)
-            const packCode = rawCode.split('/').pop()?.toUpperCase() ?? rawCode.toUpperCase()
-            setCode(packCode)
-            stopCameraScan()
-            redeem(packCode)
-            return
-          }
-        } catch (detectError) {
-          console.error('❌ Detection error:', detectError)
-        }
-
-        window.setTimeout(scanFrame, 350)
-      }
-
-      scanFrame()
-    } catch (scanError: any) {
-      console.error('❌ Camera error:', {
-        name: scanError?.name,
-        message: scanError?.message,
-        full: scanError,
-      })
-      stopCameraScan()
-
-      // Provide more specific error messages
-      let errorMsg = 'Could not open camera. Enter the pack code manually.'
-      if (scanError?.name === 'NotAllowedError') {
-        errorMsg = 'Camera permission denied. Please enable camera access.'
-      } else if (scanError?.name === 'NotFoundError') {
-        errorMsg = 'No camera device found.'
-      }
-
-      setError(errorMsg)
-      hapticFeedback('error')
+    if (!opened) {
+      // Not on Telegram mobile (e.g. desktop web) — show manual input
+      setShowManual(true)
+      setError('Native scanner unavailable here. Enter your code below.')
     }
   }
 
-  useEffect(() => () => stopCameraScan(), [])
+  const history = historyData?.data ?? []
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
       <div className="px-4 pt-4 space-y-5">
         <SectionHeader title="Scan QR" subtitle="Redeem SNICKERS pack codes" />
 
-        {/* Scan illustration */}
+        {/* Brand strip */}
         <div className="snickers-strip h-1 rounded-full" />
+
+        {/* Hero card */}
         <div className="relative bg-gradient-to-br from-red-950/70 via-surface-2 to-yellow-950/35 border border-red-700/40 rounded-3xl p-6 flex flex-col items-center gap-4 overflow-hidden">
-          <div className="absolute inset-0 opacity-5"
+          <div
+            className="absolute inset-0 opacity-5"
             style={{
               backgroundImage: 'repeating-linear-gradient(45deg, #C8102E 0, #C8102E 1px, transparent 0, transparent 50%)',
               backgroundSize: '10px 10px',
@@ -176,38 +110,39 @@ export default function ScanPage() {
           <div className="absolute right-5 top-5 flex h-8 w-8 items-center justify-center rounded-full bg-brand text-black">
             <Sparkles size={15} />
           </div>
+
           <motion.div
             animate={{ scale: [1, 1.05, 1] }}
             transition={{ duration: 2, repeat: Infinity }}
-            className="relative z-10"
+            className="relative z-10 mt-4"
           >
             <div className="w-20 h-20 rounded-2xl bg-red-600/20 border-2 border-red-500/30 flex items-center justify-center">
               <QrCode size={40} className="text-red-400" />
             </div>
           </motion.div>
+
           <div className="relative z-10 text-center">
             <h3 className="font-display font-900 text-xl uppercase text-red-200">SNICKERS Pack QR</h3>
             <p className="text-xs text-red-200/75 mt-1">Scan the code from SNICKERS Kazakhstan packs</p>
           </div>
+
+          {/* Single scan button — uses Telegram native scanner */}
           <button
             type="button"
-            onClick={isScanning ? stopCameraScan : startCameraScan}
-            className="relative z-10 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 font-display text-xs font-900 uppercase text-black"
+            onClick={handleNativeScan}
+            disabled={isPending}
+            className="relative z-10 flex items-center gap-2 rounded-xl bg-brand px-5 py-3 font-display text-sm font-900 uppercase text-black active:scale-95 transition-transform disabled:opacity-50"
           >
-            <Camera size={15} />
-            {isScanning ? 'Stop Scan' : 'Open Camera'}
+            <Camera size={16} />
+            Scan QR Code
           </button>
-          {isScanning && (
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              className="relative z-10 h-40 w-full rounded-2xl border border-white/12 object-cover"
-            />
-          )}
+
+          <p className="relative z-10 text-[10px] text-red-300/50 font-display uppercase tracking-wider">
+            Opens Telegram camera scanner
+          </p>
         </div>
 
-        {/* Success / Error state */}
+        {/* Success state */}
         <AnimatePresence>
           {result && (
             <motion.div
@@ -234,26 +169,51 @@ export default function ScanPage() {
           )}
         </AnimatePresence>
 
-        {/* Code input */}
+        {/* Manual code input — shown when native scanner unavailable OR user wants to type */}
         <div>
-          <label className="text-[11px] font-display uppercase text-gray-400 block mb-1.5">Enter Pack Code</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(''); setResult(null) }}
-              onKeyDown={(e) => e.key === 'Enter' && code.trim() && redeem(undefined)}
-              placeholder="SNICKERS-XXXX-XXXX"
-              className="flex-1 bg-surface-3 border border-white/8 rounded-xl px-3 py-3 font-mono text-sm uppercase tracking-widest focus:outline-none focus:border-brand transition-colors placeholder:text-gray-600 placeholder:normal-case placeholder:tracking-normal"
-            />
-            <button
-              onClick={() => redeem(undefined)}
-              disabled={!code.trim() || isPending}
-              className="bg-brand text-black font-display font-800 uppercase px-4 py-3 rounded-xl disabled:opacity-40 active:scale-95 transition-transform"
-            >
-              {isPending ? <LoadingSpinner size={18} /> : <Scan size={20} />}
-            </button>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[11px] font-display uppercase text-gray-400">
+              Enter Pack Code Manually
+            </label>
+            {!showManual && (
+              <button
+                onClick={() => setShowManual((v) => !v)}
+                className="text-[10px] font-display uppercase text-gray-500 hover:text-brand transition-colors"
+              >
+                Type instead →
+              </button>
+            )}
           </div>
+
+          <AnimatePresence>
+            {showManual && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => { setCode(e.target.value.toUpperCase()); setError(''); setResult(null) }}
+                    onKeyDown={(e) => e.key === 'Enter' && code.trim() && redeem(undefined)}
+                    placeholder="SNICKERS-XXXX-XXXX"
+                    className="flex-1 bg-surface-3 border border-white/8 rounded-xl px-3 py-3 font-mono text-sm uppercase tracking-widest focus:outline-none focus:border-brand transition-colors placeholder:text-gray-600 placeholder:normal-case placeholder:tracking-normal"
+                  />
+                  <button
+                    onClick={() => redeem(undefined)}
+                    disabled={!code.trim() || isPending}
+                    className="bg-brand text-black font-display font-800 uppercase px-4 py-3 rounded-xl disabled:opacity-40 active:scale-95 transition-transform"
+                  >
+                    {isPending ? <LoadingSpinner size={18} /> : <Scan size={20} />}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {error && (
             <div className="flex items-center gap-2 mt-2">
               <XCircle size={14} className="text-red-400 flex-shrink-0" />
@@ -262,14 +222,19 @@ export default function ScanPage() {
           )}
         </div>
 
-        {/* Demo codes hint */}
+        {/* Demo codes for testing */}
         <div className="bg-surface-2 border border-white/6 rounded-2xl p-3">
-          <p className="text-[10px] font-display uppercase text-gray-500 mb-2">SNICKERS test pack codes:</p>
+          <p className="text-[10px] font-display uppercase text-gray-500 mb-2">Test pack codes (demo):</p>
           <div className="flex flex-wrap gap-1.5">
             {DEMO_CODES.map((c) => (
               <button
                 key={c}
-                onClick={() => { setCode(c); setError(''); setResult(null) }}
+                onClick={() => {
+                  setCode(c)
+                  setError('')
+                  setResult(null)
+                  setShowManual(true)
+                }}
                 className="font-mono text-[10px] bg-surface-3 border border-white/8 px-2 py-1 rounded-lg text-gray-300 hover:border-brand/50 hover:text-brand transition-colors"
               >
                 {c}
@@ -290,7 +255,9 @@ export default function ScanPage() {
                     <span className="text-lg">{cfg?.icon ?? '🎁'}</span>
                     <div className="flex-1 min-w-0">
                       <p className="font-display font-700 text-sm truncate">{cfg?.label ?? h.rewardType}</p>
-                      <p className="text-[10px] text-gray-500">{h.code?.code} · {new Date(h.createdAt).toLocaleDateString()}</p>
+                      <p className="text-[10px] text-gray-500">
+                        {h.code?.code} · {new Date(h.createdAt).toLocaleDateString()}
+                      </p>
                     </div>
                     {h.rewardValue > 0 && (
                       <span className={`font-display font-800 text-sm ${cfg?.color ?? 'text-brand'}`}>
@@ -304,6 +271,7 @@ export default function ScanPage() {
           </div>
         )}
       </div>
+
       <BottomNav />
     </div>
   )

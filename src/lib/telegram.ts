@@ -92,3 +92,52 @@ export function expandApp() {
   const twa = getTelegramWebApp() as { expand?: () => void; isExpanded?: boolean } | null
   if (twa && !twa.isExpanded) twa.expand?.()
 }
+
+// ─── Native QR Scanner ────────────────────────────────────────────────────────
+// Uses Telegram's built-in showScanQrPopup — works on iOS + Android natively.
+// No camera permissions dialog, no BarcodeDetector compatibility issues.
+// Not available on Telegram Web (desktop browser) — falls back gracefully.
+
+type ScanCallback = (code: string | null) => void
+
+type TwaWithQr = {
+  showScanQrPopup?: (
+    params: { text?: string },
+    callback?: (text: string) => boolean | void
+  ) => void
+  closeScanQrPopup?: () => void
+}
+
+/**
+ * Opens Telegram's native QR scanner popup.
+ * Returns true if the native scanner was opened, false if unavailable.
+ * When unavailable (desktop/web), the caller should show the manual input instead.
+ */
+export function scanQrCode(callback: ScanCallback): boolean {
+  const twa = getTelegramWebApp() as TwaWithQr | null
+
+  if (!twa?.showScanQrPopup) {
+    // Not inside Telegram mobile app — caller should show manual input fallback
+    return false
+  }
+
+  twa.showScanQrPopup(
+    { text: 'Scan your SNICKERS pack QR code' },
+    (rawText: string) => {
+      // Extract last path segment if it's a URL (e.g. https://snickers.kz/GOLD-BAR-001)
+      const code = rawText.includes('/')
+        ? rawText.split('/').pop()?.trim().toUpperCase() ?? rawText.toUpperCase()
+        : rawText.trim().toUpperCase()
+
+      callback(code)
+      return true // returning true auto-closes the popup after first scan
+    }
+  )
+
+  return true
+}
+
+export function closeScanQrPopup(): void {
+  const twa = getTelegramWebApp() as TwaWithQr | null
+  twa?.closeScanQrPopup?.()
+}
