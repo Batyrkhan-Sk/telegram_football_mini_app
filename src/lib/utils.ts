@@ -31,11 +31,11 @@ export function getAvatarUrl(username: string | null, firstName: string | null):
 }
 
 export function getRankLabel(level: number): string {
-  if (level >= 15) return '🏆 Legend'
-  if (level >= 10) return '⚡ Elite'
-  if (level >= 7) return '🔥 Pro'
-  if (level >= 4) return '⭐ Rising Star'
-  return '🌱 Rookie'
+  if (level >= 15) return 'Мазасыз'
+  if (level >= 10) return 'Душнила'
+  if (level >= 7) return 'Ұмытшақ'
+  if (level >= 4) return 'В тильте'
+  return 'Не в теме'
 }
 
 export function getResultEmoji(summary: string): { emoji: string; label: string } {

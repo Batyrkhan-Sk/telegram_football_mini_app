@@ -7,8 +7,9 @@ import { motion } from 'framer-motion'
 import { Swords, LayoutGrid, User2, Trophy, QrCode, Zap, ChevronRight, Timer, Star } from 'lucide-react'
 import { useUserStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
-import { XpBar, Skeleton, Badge } from '@/components/ui'
-import { formatXP, getAvatarUrl, getRankLabel, isOnCooldown, formatTimeLeft } from '@/lib/utils'
+import { SnickersTitleSelector } from '@/components/SnickersTitleSelector'
+import { XpBar, Skeleton } from '@/components/ui'
+import { formatXP, isOnCooldown, formatTimeLeft } from '@/lib/utils'
 import { xpProgressToNextLevel } from '@/lib/battle/engine'
 import { useQuery } from '@tanstack/react-query'
 import type { UserCard } from '@/types'
@@ -22,7 +23,7 @@ function CooldownBanner({ endAt }: { endAt: string }) {
         <p className="text-[10px] text-gray-400">Restores in {formatTimeLeft(endAt)}</p>
       </div>
       <Link href="/scan" className="text-[10px] font-display font-700 text-brand uppercase">
-        Skip →
+        Skip
       </Link>
     </div>
   )
@@ -93,7 +94,7 @@ export default function HomePage() {
                 <h1 className="font-display font-900 text-xl uppercase leading-none">
                   {user.firstName ?? user.username ?? 'Player'}
                 </h1>
-                <Badge variant="brand">{getRankLabel(profile?.level ?? 1)}</Badge>
+                <SnickersTitleSelector compact />
               </div>
               <p className="text-xs text-gray-500 mt-0.5">@{user.username ?? 'player'}</p>
             </div>

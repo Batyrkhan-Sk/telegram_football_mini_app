@@ -4,7 +4,7 @@ import { CardRarity, Position } from '@prisma/client'
 const STARTER_CARDS = [
   {
     id: 'card-fwd-common',
-    playerName: 'Nurlan Bekzat',
+    playerName: 'Aleksandr Martynovich',
     rarity: CardRarity.COMMON,
     club: 'FC Kairat',
     position: Position.FWD,
@@ -17,7 +17,7 @@ const STARTER_CARDS = [
   },
   {
     id: 'card-mid-rare',
-    playerName: 'Amir Zeinolla',
+    playerName: 'Adilet Sadybekov',
     rarity: CardRarity.RARE,
     club: 'FC Kairat',
     position: Position.MID,
@@ -30,11 +30,11 @@ const STARTER_CARDS = [
   },
   {
     id: 'card-gk-demo',
-    playerName: 'Stas Pokatilov',
+    playerName: 'Temirlan Anarbekov',
     rarity: CardRarity.RARE,
     club: 'FC Kairat',
     position: Position.GK,
-    imageUrl: '/cards/gk-demo.png',
+    imageUrl: '/cards/anarbekov.png',
     speed: 60,
     shot: 40,
     dribbling: 55,

@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils'
 import { RARITY_CONFIG, POSITION_LABELS } from '@/config/game'
 import type { UserCard } from '@/types'
-import { Zap, Clock, UserRound } from 'lucide-react'
+import { Zap, Clock } from 'lucide-react'
 import { formatTimeLeft } from '@/lib/utils'
 
 interface CardProps {
@@ -29,6 +29,44 @@ const RARITY_BORDER: Record<string, string> = {
 
 const POSITION_COLORS: Record<string, string> = {
   GK: '#22c55e', DEF: '#3b82f6', MID: '#f59e0b', FWD: '#ef4444',
+}
+
+function CustomPlayerPortrait({ compact = false, name }: { compact?: boolean; name: string }) {
+  const seed = name.charCodeAt(0) + name.length
+  const skin = ['#c68642', '#d08b5b', '#8d5524', '#f1c27d'][seed % 4]
+  const jersey = ['#f5c518', '#c8102e', '#1f2937', '#eeeeee'][seed % 4]
+  const hair = ['#111827', '#f5c518', '#7c2d12', '#3f1f14'][seed % 4]
+
+  if (compact) {
+    return (
+      <div className="relative h-full w-full overflow-hidden bg-gradient-to-b from-brand/25 to-black/20">
+        <div className="absolute left-1/2 top-2 h-7 w-7 -translate-x-1/2 rounded-full" style={{ background: skin }}>
+          <div className="absolute -top-1 left-1 h-2 w-5 rounded-full" style={{ background: hair }} />
+          <div className="absolute left-2 top-3 h-1 w-1 rounded-full bg-black" />
+          <div className="absolute right-2 top-3 h-1 w-1 rounded-full bg-black" />
+        </div>
+        <div className="absolute bottom-0 left-1/2 h-6 w-9 -translate-x-1/2 rounded-t-xl" style={{ background: jersey }} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-b from-brand/15 via-black/10 to-black/45">
+      <div className="absolute top-8 h-36 w-36 rounded-full border border-white/20 bg-black/25" />
+      <div className="relative z-10 mt-2 flex flex-col items-center">
+        <div className="relative h-28 w-28 rounded-full" style={{ background: skin }}>
+          <div className="absolute -top-3 left-5 h-9 w-20 rounded-t-full" style={{ background: hair }} />
+          <div className="absolute left-8 top-12 h-2 w-2 rounded-full bg-black" />
+          <div className="absolute right-8 top-12 h-2 w-2 rounded-full bg-black" />
+          <div className="absolute left-1/2 top-[72px] h-2 w-12 -translate-x-1/2 rounded-full bg-black/80" />
+        </div>
+        <div className="-mt-2 h-24 w-40 rounded-t-[48px]" style={{ background: jersey }} />
+        <span className="mt-2 rounded-full bg-black/35 px-3 py-1 text-[10px] font-display font-800 uppercase tracking-[0.16em] text-brand">
+          Your Player
+        </span>
+      </div>
+    </div>
+  )
 }
 
 export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) {
@@ -61,9 +99,7 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
               className="h-full w-full object-cover"
             />
           ) : card.isCustom ? (
-            <div className="w-full h-full flex items-center justify-center bg-brand/10">
-              <UserRound size={26} className="text-brand" />
-            </div>
+            <CustomPlayerPortrait compact name={card.playerName} />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-2xl">
               {card.position === 'GK' ? '🧤' : card.position === 'DEF' ? '🛡️' : card.position === 'MID' ? '⚡' : '⚽'}
@@ -125,14 +161,7 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
             className="h-full w-full object-cover"
           />
         ) : card.isCustom ? (
-          <div className="flex flex-col items-center justify-center gap-3 text-brand">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full border border-brand/35 bg-brand/10">
-              <UserRound size={54} />
-            </div>
-            <span className="text-xs font-display font-800 uppercase tracking-[0.18em] text-brand/80">
-              Custom Player
-            </span>
-          </div>
+          <CustomPlayerPortrait name={card.playerName} />
         ) : (
           <div className="text-7xl select-none">
             {card.position === 'GK' ? '🧤' : card.position === 'DEF' ? '🛡️' : card.position === 'MID' ? '⚡' : '⚽'}

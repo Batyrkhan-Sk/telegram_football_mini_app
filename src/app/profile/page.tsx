@@ -6,8 +6,9 @@ import { Trophy, Swords, QrCode, Star, Zap, Shield, Target, Wind } from 'lucide-
 import Link from 'next/link'
 import { useUserStore } from '@/store'
 import { BottomNav } from '@/components/BottomNav'
-import { XpBar, StatBar, Skeleton, Badge } from '@/components/ui'
-import { formatXP, getRankLabel } from '@/lib/utils'
+import { SnickersTitleSelector } from '@/components/SnickersTitleSelector'
+import { XpBar, Skeleton } from '@/components/ui'
+import { formatXP } from '@/lib/utils'
 import { xpProgressToNextLevel } from '@/lib/battle/engine'
 import type { UserCard } from '@/types'
 
@@ -69,7 +70,7 @@ export default function ProfilePage() {
             </h1>
             <p className="text-gray-400 text-sm">@{user.username ?? 'player'}</p>
             <div className="mt-1.5">
-              <Badge variant="brand">{getRankLabel(profile?.level ?? 1)}</Badge>
+              <SnickersTitleSelector />
             </div>
           </div>
 
@@ -120,7 +121,7 @@ export default function ProfilePage() {
             ))}
           </div>
           <Link href="/cards" className="flex items-center justify-center gap-1 text-brand font-display font-700 text-xs uppercase">
-            View All Cards →
+            View All Cards
           </Link>
         </div>
 

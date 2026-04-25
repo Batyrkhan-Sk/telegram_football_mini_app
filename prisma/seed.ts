@@ -51,7 +51,7 @@ async function main() {
       update: {},
       create: {
         id: 'card-gk-demo',
-        playerName: 'Stas Pokatilov',
+        playerName: 'Temirlan Anarbekov',
         rarity: CardRarity.RARE,
         club: 'FC Kairat',
         position: Position.GK,
@@ -64,7 +64,7 @@ async function main() {
       update: {},
       create: {
         id: 'card-mid-rare',
-        playerName: 'Amir Zeinolla',
+        playerName: 'Adilet Sadybekov',
         rarity: CardRarity.RARE,
         club: 'FC Kairat',
         position: Position.MID,
@@ -77,7 +77,7 @@ async function main() {
       update: {},
       create: {
         id: 'card-fwd-common',
-        playerName: 'Nurlan Bekzat',
+        playerName: 'Aleksandr Martynovich',
         rarity: CardRarity.COMMON,
         club: 'FC Kairat',
         position: Position.FWD,
