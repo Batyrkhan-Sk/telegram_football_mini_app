@@ -60,7 +60,7 @@ async function main() {
       },
     }),
     prisma.card.upsert({
-      where: { id: 'card-mid-rare' },
+      where: { id: 'card-def-rare' },
       update: {},
       create: {
         id: 'card-def-rare',
@@ -174,10 +174,10 @@ async function main() {
     rewardValue?: number
     campaign: string
   }> = [
-    { code: 'SNICKERS-KAIRAT-2024', rewardType: RewardType.CARD_RESTORE, campaign: 'launch' },
-    { code: 'SNICKERS-DEMO-01', rewardType: RewardType.CARD_RESTORE, campaign: 'demo' },
-    { code: 'SNICKERS-DEMO-02', rewardType: RewardType.CARD_RESTORE, campaign: 'demo' },
-    { code: 'SNICKERS-DEMO-03', rewardType: RewardType.AR_COOLDOWN_BYPASS, campaign: 'demo' },
+    { code: 'SNICKERS-KAIRAT-2026', rewardType: RewardType.CARD_RESTORE, campaign: 'launch' },
+    { code: 'SNICKERS-ДУШНИЛА-01', rewardType: RewardType.CARD_RESTORE, campaign: 'demo' },
+    { code: 'SNICKERS-МАЗАСЫЗ-02', rewardType: RewardType.CARD_RESTORE, campaign: 'demo' },
+    { code: 'SNICKERS-ВТИЛЬТЕ-03', rewardType: RewardType.AR_COOLDOWN_BYPASS, campaign: 'demo' },
   ]
 
   for (const pc of promoCodes) {
@@ -190,7 +190,7 @@ async function main() {
         rewardValue: pc.rewardValue ?? 0,
         campaign: pc.campaign,
         maxUses: 1,
-        expiresAt: new Date('2027-12-31'),
+        expiresAt: pc.campaign === 'demo' ? null : new Date('2027-12-31'),
       },
     })
   }

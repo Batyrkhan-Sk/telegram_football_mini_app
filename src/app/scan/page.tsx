@@ -11,10 +11,10 @@ import { hapticFeedback } from '@/lib/telegram'
 import type { PromoRedemptionResult } from '@/types'
 
 const DEMO_CODES = [
-  'SNICKERS-KAIRAT-2024',
-  'SNICKERS-DEMO-01',
-  'SNICKERS-DEMO-02',
-  'SNICKERS-DEMO-03',
+  'SNICKERS-KAIRAT-2026',
+  'SNICKERS-ДУШНИЛА-01',
+  'SNICKERS-МАЗАСЫЗ-02',
+  'SNICKERS-ВТИЛЬТЕ-03',
 ]
 
 const REWARD_LABELS: Record<string, { icon: string; label: string; color: string }> = {
@@ -92,9 +92,11 @@ export default function ScanPage() {
     }
 
     try {
+      console.log('📷 Starting camera scan...')
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
       })
+      console.log('✅ Camera permission granted, stream started')
       streamRef.current = stream
       setIsScanning(true)
 
@@ -103,6 +105,7 @@ export default function ScanPage() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
+        console.log('✅ Video preview playing')
       } else {
         throw new Error('Camera preview is not ready')
       }
@@ -110,25 +113,43 @@ export default function ScanPage() {
       const detector = new BarcodeDetector({ formats: ['qr_code'] })
       const scanFrame = async () => {
         if (!videoRef.current || !streamRef.current) return
-        const codes = await detector.detect(videoRef.current)
-        const rawCode = codes[0]?.rawValue?.trim()
+        try {
+          const codes = await detector.detect(videoRef.current)
+          const rawCode = codes[0]?.rawValue?.trim()
 
-        if (rawCode) {
-          const packCode = rawCode.split('/').pop()?.toUpperCase() ?? rawCode.toUpperCase()
-          setCode(packCode)
-          stopCameraScan()
-          redeem(packCode)
-          return
+          if (rawCode) {
+            console.log('✅ QR code detected:', rawCode)
+            const packCode = rawCode.split('/').pop()?.toUpperCase() ?? rawCode.toUpperCase()
+            setCode(packCode)
+            stopCameraScan()
+            redeem(packCode)
+            return
+          }
+        } catch (detectError) {
+          console.error('❌ Detection error:', detectError)
         }
 
         window.setTimeout(scanFrame, 350)
       }
 
       scanFrame()
-    } catch (scanError) {
-      console.error(scanError)
+    } catch (scanError: any) {
+      console.error('❌ Camera error:', {
+        name: scanError?.name,
+        message: scanError?.message,
+        full: scanError,
+      })
       stopCameraScan()
-      setError('Could not open camera. Enter the pack code manually.')
+
+      // Provide more specific error messages
+      let errorMsg = 'Could not open camera. Enter the pack code manually.'
+      if (scanError?.name === 'NotAllowedError') {
+        errorMsg = 'Camera permission denied. Please enable camera access.'
+      } else if (scanError?.name === 'NotFoundError') {
+        errorMsg = 'No camera device found.'
+      }
+
+      setError(errorMsg)
       hapticFeedback('error')
     }
   }
