@@ -168,17 +168,16 @@ async function main() {
   console.log('✅ Seeded demo users and opponents')
 
   // --- Promo codes ---
-  const promoCodes = [
+  const promoCodes: Array<{
+    code: string
+    rewardType: RewardType
+    rewardValue?: number
+    campaign: string
+  }> = [
     { code: 'SNICKERS-KAIRAT-2024', rewardType: RewardType.CARD_RESTORE, campaign: 'launch' },
-    { code: 'MARS-FC-ALPHA', rewardType: RewardType.AR_COOLDOWN_BYPASS, campaign: 'launch' },
-    { code: 'GOLD-BAR-001', rewardType: RewardType.BONUS_COINS, rewardValue: 100, campaign: 'launch' },
-    { code: 'GOLD-BAR-002', rewardType: RewardType.BONUS_COINS, rewardValue: 100, campaign: 'launch' },
-    { code: 'GOLD-BAR-003', rewardType: RewardType.BONUS_COINS, rewardValue: 150, campaign: 'launch' },
-    { code: 'KAIRAT-BOOST-XP', rewardType: RewardType.BONUS_XP, rewardValue: 200, campaign: 'launch' },
     { code: 'SNICKERS-DEMO-01', rewardType: RewardType.CARD_RESTORE, campaign: 'demo' },
     { code: 'SNICKERS-DEMO-02', rewardType: RewardType.CARD_RESTORE, campaign: 'demo' },
     { code: 'SNICKERS-DEMO-03', rewardType: RewardType.AR_COOLDOWN_BYPASS, campaign: 'demo' },
-    { code: 'BYPASS-NOW', rewardType: RewardType.AR_COOLDOWN_BYPASS, campaign: 'demo' },
   ]
 
   for (const pc of promoCodes) {
@@ -191,7 +190,7 @@ async function main() {
         rewardValue: pc.rewardValue ?? 0,
         campaign: pc.campaign,
         maxUses: 1,
-        expiresAt: new Date('2025-12-31'),
+        expiresAt: new Date('2027-12-31'),
       },
     })
   }

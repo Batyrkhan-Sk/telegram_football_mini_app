@@ -32,7 +32,7 @@ const QUICK_ACTIONS = [
   { href: '/battle', icon: Swords, label: 'Battle', desc: 'Challenge opponents', color: '#C8102E' },
   { href: '/cards', icon: LayoutGrid, label: 'My Cards', desc: 'View collection', color: '#F5C518' },
   { href: '/character', icon: User2, label: 'My Player', desc: 'Create character', color: '#A855F7' },
-  { href: '/ar', icon: Star, label: 'Penalty', desc: 'AR mode', color: '#22C55E' },
+  { href: '/ar', icon: Star, label: 'Penalty', desc: 'Game mode', color: '#22C55E' },
 ]
 
 export default function HomePage() {
@@ -231,7 +231,7 @@ export default function HomePage() {
           <Trophy size={20} className="text-brand" />
           <div className="flex-1">
             <p className="font-display font-800 text-sm uppercase">Leaderboard</p>
-            <p className="text-[10px] text-gray-400">See where you rank globally</p>
+            <p className="text-[10px] text-gray-400">Where you rank in KZ</p>
           </div>
           <ChevronRight size={16} className="text-gray-500" />
         </Link>

@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { RARITY_CONFIG, POSITION_LABELS } from '@/config/game'
 import type { UserCard } from '@/types'
@@ -38,6 +37,7 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
   const cfg = RARITY_CONFIG[rarity]
   const energyPct = Math.round((energy / maxEnergy) * 100)
   const exhausted = isExhausted || isOnCooldown
+  const cardImage = card.imageUrl
 
   if (compact) {
     return (
@@ -53,15 +53,12 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
         )}
       >
         <div className="relative w-12 h-12 rounded-lg bg-white/10 flex-shrink-0 overflow-hidden">
-          {card.imageUrl ? (
-            <Image
-              src={card.imageUrl}
+          {cardImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={cardImage}
               alt={card.playerName}
-              fill
-              className="object-cover"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none'
-              }}
+              className="h-full w-full object-cover"
             />
           ) : card.isCustom ? (
             <div className="w-full h-full flex items-center justify-center bg-brand/10">
@@ -120,15 +117,12 @@ export function PlayerCard({ userCard, selected, onClick, compact }: CardProps) 
 
       {/* Card image area */}
       <div className="relative h-48 flex items-center justify-center bg-black/40 overflow-hidden">
-        {card.imageUrl ? (
-          <Image
-            src={card.imageUrl}
+        {cardImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cardImage}
             alt={card.playerName}
-            fill
-            className="object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
+            className="h-full w-full object-cover"
           />
         ) : card.isCustom ? (
           <div className="flex flex-col items-center justify-center gap-3 text-brand">

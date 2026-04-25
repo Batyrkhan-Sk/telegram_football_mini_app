@@ -82,7 +82,7 @@ export default function LeaderboardPage() {
   return (
     <div className="flex flex-col min-h-screen pb-24">
       <div className="px-4 pt-4">
-        <SectionHeader title="Leaderboard" subtitle="Global XP rankings" />
+        <SectionHeader title="Leaderboard" subtitle="KZ XP rankings" />
 
         {/* Podium */}
         {!isLoading && top3.length >= 3 && (

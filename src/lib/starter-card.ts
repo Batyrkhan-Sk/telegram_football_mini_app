@@ -50,7 +50,7 @@ async function ensureStarterCardCatalog() {
     STARTER_CARDS.map((card) =>
       prisma.card.upsert({
         where: { id: card.id },
-        update: {},
+        update: { imageUrl: card.imageUrl },
         create: card,
       })
     )

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     // Check cooldown
     if (user.profile.arCooldownEnd && user.profile.arCooldownEnd > new Date()) {
-      return NextResponse.json({ error: 'AR mode is on cooldown' }, { status: 400 })
+      return NextResponse.json({ error: 'Penalty game is on cooldown' }, { status: 400 })
     }
 
     const success = input.goalsScored >= AR_MODE.GOALS_TO_WIN

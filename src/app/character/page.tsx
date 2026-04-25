@@ -98,6 +98,33 @@ const PRESETS = [
   },
 ] as const
 
+const SNICKERS_MOODS = [
+  {
+    id: 'dushnila',
+    label: 'Душнила',
+    description: 'Strict tactician, heavy defense, no free space',
+    draft: { hairstyle: 'style1', faceType: 'face1', jerseyStyle: 'jersey3', dominantAttr: 'defense' },
+  },
+  {
+    id: 'tilt',
+    label: 'В тильте',
+    description: 'Emotional finisher with risky power shots',
+    draft: { hairstyle: 'style2', faceType: 'face3', jerseyStyle: 'jersey4', dominantAttr: 'shot' },
+  },
+  {
+    id: 'mazasyz',
+    label: 'Мазасыз',
+    description: 'Restless runner, quick feet, always pressing',
+    draft: { hairstyle: 'style4', faceType: 'face2', jerseyStyle: 'jersey1', dominantAttr: 'speed' },
+  },
+  {
+    id: 'not-in-topic',
+    label: 'Не в теме',
+    description: 'Calm wildcard with unexpected dribbling',
+    draft: { hairstyle: 'style3', faceType: 'face4', jerseyStyle: 'jersey2', dominantAttr: 'dribbling' },
+  },
+] as const
+
 const ATTR_STATS: Record<string, Record<string, number>> = {
   speed:     { speed: 82, shot: 65, dribbling: 75, physical: 60, defense: 55 },
   shot:      { speed: 68, shot: 84, dribbling: 70, physical: 62, defense: 52 },
@@ -417,6 +444,7 @@ export default function CharacterPage() {
   const qc                                    = useQueryClient()
   const [sourceMode, setSourceMode]           = useState<SourceMode>('preset')
   const [selectedPreset, setSelectedPreset]   = useState<string>(PRESETS[0].id)
+  const [selectedSnickersMood, setSelectedSnickersMood] = useState<string>(SNICKERS_MOODS[0].id)
   const [generationState, setGenerationState] = useState<GenerationState>('ready')
   const [photoPreview, setPhotoPreview]       = useState<string | null>(null)
   const [identity, setIdentity]               = useState<IdentityProfile | null>(
@@ -458,6 +486,18 @@ export default function CharacterPage() {
     setIdentity(buildIdentityProfile('preset', seed, preset.description))
     updateDraft(preset.draft)
     hapticFeedback('light')
+  }
+
+  const applySnickersMood = (moodId: string) => {
+    const mood = SNICKERS_MOODS.find((item) => item.id === moodId) ?? SNICKERS_MOODS[0]
+    setSelectedSnickersMood(mood.id)
+    updateDraft(mood.draft)
+    setIdentity((current) =>
+      current
+        ? { ...current, featureFocus: mood.label, colorNote: mood.description }
+        : buildIdentityProfile(sourceMode, hashString(mood.id), mood.description),
+    )
+    hapticFeedback('medium')
   }
 
   const handlePhotoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -716,6 +756,32 @@ export default function CharacterPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <div className="mb-4 rounded-2xl border border-white/8 bg-surface-2 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Sparkles size={16} className="text-brand" />
+            <div>
+              <h3 className="font-display font-800 uppercase">SNICKERS Character</h3>
+              <p className="text-xs text-gray-400">Pick a bar personality and your player style adapts.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {SNICKERS_MOODS.map((mood) => (
+              <button
+                key={mood.id}
+                onClick={() => applySnickersMood(mood.id)}
+                className={`min-h-[86px] rounded-xl border p-3 text-left transition-all ${
+                  selectedSnickersMood === mood.id
+                    ? 'border-brand bg-brand/15 ring-1 ring-brand'
+                    : 'border-white/8 bg-surface-3'
+                }`}
+              >
+                <p className="font-display text-sm font-900 uppercase text-brand">{mood.label}</p>
+                <p className="mt-1 text-[11px] leading-snug text-gray-400">{mood.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Anime mode toggle */}
         <button

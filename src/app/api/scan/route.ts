@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
           where: { userId: user.id },
           data: { arCooldownEnd: null },
         })
-        message = 'AR Penalty mode cooldown removed! 🎯'
+        message = 'Penalty game cooldown removed! 🎯'
         break
       }
 
