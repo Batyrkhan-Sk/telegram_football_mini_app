@@ -3,6 +3,9 @@
 > A production-style MVP for a branded digital collectible card game built around FC Kairat and Snickers.
 
 ---
+# KAIRAT × SNICKERS — Telegram Mini App MVP
+
+Link to deploy: https://t.me/KairatSnickersBot/kairat
 
 ## Product Concept
 
