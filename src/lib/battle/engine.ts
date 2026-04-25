@@ -173,6 +173,6 @@ export function xpProgressToNextLevel(xp: number): { current: number; needed: nu
     level++
   }
   const needed = Math.floor(base * Math.pow(level, exp))
-  const current = xp - threshold
+  const current = Math.floor(xp - threshold)
   return { current, needed, pct: Math.min((current / needed) * 100, 100) }
 }

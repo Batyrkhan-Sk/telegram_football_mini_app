@@ -17,7 +17,7 @@ export function XpBar({ current, needed, pct, level }: XpBarProps) {
           Level {level}
         </span>
         <span className="text-[10px] font-display text-gray-400">
-          {current} / {needed} XP
+          {Math.round(current)} / {Math.round(needed)} XP
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
