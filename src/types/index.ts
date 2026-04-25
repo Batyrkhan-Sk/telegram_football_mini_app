@@ -132,6 +132,8 @@ export interface Challenge {
   expiresAt: string
   createdAt: string
   battleId: string | null
+  senderCards?: UserCard[]
+  receiverCards?: UserCard[]
 }
 
 // ─── Leaderboard ───────────────────────────────────────────────────────────────

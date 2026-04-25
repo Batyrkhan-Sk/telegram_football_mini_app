@@ -98,9 +98,13 @@ export default function ScanPage() {
       streamRef.current = stream
       setIsScanning(true)
 
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
+      } else {
+        throw new Error('Camera preview is not ready')
       }
 
       const detector = new BarcodeDetector({ formats: ['qr_code'] })

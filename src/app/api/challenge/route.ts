@@ -9,12 +9,65 @@ import type { Card, UserCard } from '@/types'
 const CreateChallengeSchema = z.object({
   telegramId: z.string(),
   format: z.enum(['ONE_V_ONE', 'THREE_V_THREE']),
+  selectedUserCardIds: z.array(z.string()).optional(),
 })
 
 const AcceptChallengeSchema = z.object({
   telegramId: z.string(),
   selectedUserCardIds: z.array(z.string()),
 })
+
+async function formatUserCards(userCards: Array<any>, userId?: string) {
+  const character = userId ? await prisma.character.findFirst({ where: { userId } }) : null
+
+  return userCards.map((uc) => ({
+    id: uc.id,
+    cardId: uc.cardId,
+    card: {
+      id: uc.card.id,
+      playerName: uc.card.playerName,
+      rarity: uc.card.rarity,
+      club: uc.card.club,
+      position: uc.card.position,
+      imageUrl: uc.card.imageUrl,
+      isCustom: uc.card.isCustom,
+      character: uc.card.isCustom && character ? {
+        id: character.id,
+        userId: character.userId,
+        nickname: character.nickname,
+        hairstyle: character.hairstyle,
+        faceType: character.faceType,
+        skinTone: character.skinTone,
+        jerseyStyle: character.jerseyStyle,
+        dominantAttr: character.dominantAttr,
+        animeMode: character.animeMode,
+        stats: {
+          speed: character.speed,
+          shot: character.shot,
+          dribbling: character.dribbling,
+          physical: character.physical,
+          defense: character.defense,
+        },
+        createdAt: character.createdAt.toISOString(),
+      } : null,
+      stats: {
+        speed: uc.card.speed,
+        shot: uc.card.shot,
+        dribbling: uc.card.dribbling,
+        physical: uc.card.physical,
+        defense: uc.card.defense,
+      },
+      createdAt: uc.card.createdAt.toISOString(),
+    },
+    energy: uc.energy,
+    maxEnergy: uc.maxEnergy,
+    cooldownEndAt: uc.cooldownEndAt?.toISOString() ?? null,
+    timesUsed: uc.timesUsed,
+    acquiredAt: uc.acquiredAt.toISOString(),
+    isExhausted: uc.energy <= 0,
+    isOnCooldown: Boolean(uc.cooldownEndAt && uc.cooldownEndAt > new Date()),
+  }))
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,9 +78,47 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
     await ensureStarterCards(user.id)
 
+    const maxCards = input.format === 'ONE_V_ONE' ? 1 : 3
+    const selectedUserCardIds = input.selectedUserCardIds ?? []
+
+    if (selectedUserCardIds.length !== maxCards) {
+      return NextResponse.json({ error: `Select ${maxCards} card${maxCards > 1 ? 's' : ''} before sharing` }, { status: 400 })
+    }
+
+    const senderCards = await prisma.userCard.findMany({
+      where: { id: { in: selectedUserCardIds }, userId: user.id },
+      include: { card: true },
+    })
+
+    if (senderCards.length !== maxCards) {
+      return NextResponse.json({ error: 'No valid cards selected' }, { status: 400 })
+    }
+
+    if (senderCards.some((uc) => uc.energy <= 0 || uc.cooldownEndAt)) {
+      return NextResponse.json({ error: 'Some selected cards are unavailable' }, { status: 400 })
+    }
+
+    const battle = await prisma.battle.create({
+      data: {
+        player1Id: user.id,
+        format: input.format,
+        status: 'PENDING',
+        participants: {
+          create: senderCards.map((uc, index) => ({
+            userCardId: uc.id,
+            playerId: user.id,
+            slot: index + 1,
+            energyBefore: uc.energy,
+            energyAfter: Math.max(0, uc.energy - CARD_ENERGY.ENERGY_PER_BATTLE),
+          })),
+        },
+      },
+    })
+
     const challenge = await prisma.challenge.create({
       data: {
         senderId: user.id,
+        battleId: battle.id,
         format: input.format,
         status: 'PENDING',
         expiresAt: new Date(Date.now() + 24 * 3600 * 1000), // 24h
@@ -63,6 +154,14 @@ export async function GET(req: NextRequest) {
     include: {
       sender: { include: { profile: true } },
       receiver: { include: { profile: true } },
+      battle: {
+        include: {
+          participants: {
+            include: { userCard: { include: { card: true } } },
+            orderBy: { slot: 'asc' },
+          },
+        },
+      },
     },
   })
 
@@ -71,7 +170,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Challenge has expired' }, { status: 400 })
   }
 
-  return NextResponse.json({ data: challenge })
+  const senderCards = challenge.battle?.participants
+    .filter((participant) => participant.playerId === challenge.senderId)
+    .map((participant) => participant.userCard) ?? []
+  const receiverCards = challenge.battle?.participants
+    .filter((participant) => participant.playerId === challenge.receiverId)
+    .map((participant) => participant.userCard) ?? []
+
+  return NextResponse.json({
+    data: {
+      ...challenge,
+      senderCards: await formatUserCards(senderCards, challenge.senderId),
+      receiverCards: await formatUserCards(receiverCards, challenge.receiverId ?? undefined),
+    },
+  })
 }
 
 export async function PATCH(req: NextRequest) {
@@ -87,7 +199,17 @@ export async function PATCH(req: NextRequest) {
 
     const challenge = await prisma.challenge.findFirst({
       where: id ? { id } : { deepLinkToken: token! },
-      include: { sender: { include: { profile: true } } },
+      include: {
+        sender: { include: { profile: true } },
+        battle: {
+          include: {
+            participants: {
+              include: { userCard: { include: { card: true } } },
+              orderBy: { slot: 'asc' },
+            },
+          },
+        },
+      },
     })
 
     if (!challenge) return NextResponse.json({ error: 'Challenge not found' }, { status: 404 })
@@ -128,11 +250,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Some selected cards have no energy' }, { status: 400 })
     }
 
-    const senderCards = await prisma.userCard.findMany({
-      where: { userId: challenge.senderId, energy: { gt: 0 } },
-      include: { card: true },
-      take: maxCards,
-    })
+    let senderCards = challenge.battle?.participants
+      .filter((participant) => participant.playerId === challenge.senderId)
+      .map((participant) => participant.userCard) ?? []
+
+    if (senderCards.length === 0) {
+      senderCards = await prisma.userCard.findMany({
+        where: { userId: challenge.senderId, energy: { gt: 0 } },
+        include: { card: true },
+        take: maxCards,
+      })
+    }
 
     if (senderCards.length === 0) {
       return NextResponse.json({ error: 'Challenger has no available cards' }, { status: 400 })
@@ -176,21 +304,45 @@ export async function PATCH(req: NextRequest) {
       ? resolveSingleBattle(senderMapped[0], receiverMapped[0], challenge.senderId, receiver.id)
       : resolveTeamBattle(senderMapped, receiverMapped, challenge.senderId, receiver.id)
 
-    const battle = await prisma.battle.create({
-      data: {
-        player1Id: challenge.senderId,
-        player2Id: receiver.id,
-        format: challenge.format,
-        status: 'COMPLETED',
-        winnerId: result.winnerId,
-        player1Power: result.player1Power,
-        player2Power: result.player2Power,
-        xpGained: result.xpGained,
-        coinsGained: result.coinsGained,
-        resultSummary: result.resultSummary,
-        resolvedAt: new Date(),
-      },
-    })
+    const battle = challenge.battle
+      ? await prisma.battle.update({
+          where: { id: challenge.battle.id },
+          data: {
+            player2Id: receiver.id,
+            status: 'COMPLETED',
+            winnerId: result.winnerId,
+            player1Power: result.player1Power,
+            player2Power: result.player2Power,
+            xpGained: result.xpGained,
+            coinsGained: result.coinsGained,
+            resultSummary: result.resultSummary,
+            resolvedAt: new Date(),
+            participants: {
+              create: receiverCards.map((uc, index) => ({
+                userCardId: uc.id,
+                playerId: receiver.id,
+                slot: index + 1,
+                energyBefore: uc.energy,
+                energyAfter: Math.max(0, uc.energy - CARD_ENERGY.ENERGY_PER_BATTLE),
+              })),
+            },
+          },
+        })
+      : await prisma.battle.create({
+          data: {
+            player1Id: challenge.senderId,
+            player2Id: receiver.id,
+            format: challenge.format,
+            status: 'COMPLETED',
+            winnerId: result.winnerId,
+            player1Power: result.player1Power,
+            player2Power: result.player2Power,
+            xpGained: result.xpGained,
+            coinsGained: result.coinsGained,
+            resultSummary: result.resultSummary,
+            resolvedAt: new Date(),
+          },
+        })
 
     result.battleId = battle.id
 

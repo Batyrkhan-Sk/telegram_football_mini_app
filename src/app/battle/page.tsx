@@ -71,7 +71,11 @@ export default function BattlePage() {
       fetch('/api/challenge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegramId: user?.telegramId, format }),
+        body: JSON.stringify({
+          telegramId: user?.telegramId,
+          format,
+          selectedUserCardIds: selectedCards.map((card) => card.id),
+        }),
       }).then((r) => r.json()),
     onSuccess: (res) => {
       if (res.data?.shareUrl) {
@@ -260,6 +264,7 @@ export default function BattlePage() {
 
           <button
             onClick={() => createChallenge()}
+            disabled={selectedCards.length < maxCards}
             className="w-full flex items-center justify-center gap-2 bg-surface-3 border border-white/8 font-display font-700 uppercase text-sm py-3 rounded-2xl"
           >
             <Share2 size={16} />

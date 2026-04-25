@@ -183,6 +183,32 @@ export default function BattleDetailPage() {
           </div>
         </div>
 
+        {(challenge.senderCards?.length ?? 0) > 0 && (
+          <div className="w-full text-left">
+            <p className="text-[11px] font-display uppercase text-gray-400 mb-2">
+              Challenger Selected Card{(challenge.senderCards?.length ?? 0) > 1 ? 's' : ''}
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {challenge.senderCards?.map((card) => (
+                <PlayerCard key={card.id} userCard={card} compact />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedCards.length > 0 && (
+          <div className="w-full text-left">
+            <p className="text-[11px] font-display uppercase text-gray-400 mb-2">
+              Your Selected Card{selectedCards.length > 1 ? 's' : ''}
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {selectedCards.map((card) => (
+                <PlayerCard key={card.id} userCard={card} compact selected />
+              ))}
+            </div>
+          </div>
+        )}
+
         {challenge.status === 'PENDING' && !isOwn && (
           <div className="w-full space-y-4">
             <div className="text-left">

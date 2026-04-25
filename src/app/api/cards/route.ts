@@ -25,7 +25,19 @@ export async function GET(req: NextRequest) {
 
     const character = await prisma.character.findFirst({ where: { userId: user.id } })
 
-    const formatted = userCards.map((uc) => ({
+    const formatted = await Promise.all(userCards.map(async (uc) => {
+      const shouldReactivateKalmurza = uc.card.id === 'card-kalmurza' && (uc.energy < uc.maxEnergy || uc.cooldownEndAt)
+      const energy = shouldReactivateKalmurza ? uc.maxEnergy : uc.energy
+      const cooldownEndAt = shouldReactivateKalmurza ? null : uc.cooldownEndAt
+
+      if (shouldReactivateKalmurza) {
+        await prisma.userCard.update({
+          where: { id: uc.id },
+          data: { energy: uc.maxEnergy, cooldownEndAt: null },
+        })
+      }
+
+      return ({
       id: uc.id,
       cardId: uc.cardId,
       card: {
@@ -64,13 +76,14 @@ export async function GET(req: NextRequest) {
         },
         createdAt: uc.card.createdAt.toISOString(),
       },
-      energy: uc.energy,
+      energy,
       maxEnergy: uc.maxEnergy,
-      cooldownEndAt: uc.cooldownEndAt?.toISOString() ?? null,
+      cooldownEndAt: cooldownEndAt?.toISOString() ?? null,
       timesUsed: uc.timesUsed,
       acquiredAt: uc.acquiredAt.toISOString(),
-      isExhausted: uc.energy <= 0,
-      isOnCooldown: isOnCooldown(uc.cooldownEndAt?.toISOString() ?? null),
+      isExhausted: energy <= 0,
+      isOnCooldown: isOnCooldown(cooldownEndAt?.toISOString() ?? null),
+    })
     }))
 
     return NextResponse.json({ data: formatted })
