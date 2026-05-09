@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>AR Penalty Mode</title>
+
+  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 100;
+      font-family: 'Arial Black', Arial, sans-serif;
+    }
+
+    /* Shot tracker row */
+    #shot-tracker {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .shot-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.4);
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.3s;
+    }
+    .shot-dot.goal  { border-color: #22c55e; background: rgba(34,197,94,0.3); }
+    .shot-dot.miss  { border-color: #ef4444; background: rgba(239,68,68,0.3); }
+
+    #goal-counter {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.7);
+      border: 1px solid rgba(245,197,24,0.4);
+      border-radius: 12px;
+      padding: 8px 14px;
+      text-align: center;
+    }
+    #goal-counter .num {
+      font-size: 28px;
+      font-weight: 900;
+      color: #F5C518;
+      line-height: 1;
+    }
+    #goal-counter .lbl {
+      font-size: 9px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #scan-hint {
+      position: absolute;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      border: 1px solid rgba(200,16,46,0.5);
+      border-radius: 14px;
+      padding: 12px 20px;
+      text-align: center;
+      max-width: 280px;
+      transition: opacity 0.4s;
+    }
+    #scan-hint p { color: #eee; font-size: 13px; line-height: 1.4; }
+    #scan-hint .brand { color: #C8102E; font-weight: 900; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
+    #scan-hint.hidden { opacity: 0; pointer-events: none; }
+
+    #shot-zones {
+      position: absolute;
+      display: none;
+      pointer-events: all;
+    }
+    .zone {
+      position: absolute;
+      background: rgba(245,197,24,0.08);
+      border: 1px solid rgba(245,197,24,0.15);
+      cursor: pointer;
+      transition: background 0.15s;
+      border-radius: 4px;
+    }
+    .zone:active { background: rgba(245,197,24,0.35); }
+
+    #flash {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    #flash.show { opacity: 1; }
+    #flash .label {
+      font-size: 52px;
+      font-weight: 900;
+      text-transform: uppercase;
+      text-shadow: 0 0 30px currentColor;
+      letter-spacing: 4px;
+    }
+    #flash.goal-flash .label { color: #22c55e; }
+    #flash.miss-flash .label { color: #ef4444; }
+
+    #session-end {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      display: none;
+    }
+    #session-end h2 {
+      font-size: 36px;
+      font-weight: 900;
+      color: #F5C518;
+      text-transform: uppercase;
+    }
+    #session-end p { color: #ccc; font-size: 16px; }
+    #session-end .loader {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: #F5C518;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<a-scene
+  id="ar-scene"
+  mindar-image="imageTargetSrc: /targets/snickers.mind; filterMinCF: 0.001; filterBeta: 100; missTolerance: 10;"
+  color-space="sRGB"
+  renderer="colorManagement: true; physicallyCorrectLights: true;"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false"
+>
+  <a-assets>
+    <img id="goal-texture" src="/ar/goal-overlay.png" crossorigin="anonymous" />
+    <img id="snickers-texture" src="/ar/snickers-marker.png" crossorigin="anonymous" />
+  </a-assets>
+
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+  <a-entity id="ar-target" mindar-image-target="targetIndex: 0">
+
+    <a-box color="#FFFFFF" width="1.6" height="0.04" depth="0.04"
+           position="0 0.8 0" material="opacity: 0.9"></a-box>
+    <a-box color="#FFFFFF" width="0.04" height="0.8" depth="0.04"
+           position="-0.78 0.4 0" material="opacity: 0.9"></a-box>
+    <a-box color="#FFFFFF" width="0.04" height="0.8" depth="0.04"
+           position="0.78 0.4 0" material="opacity: 0.9"></a-box>
+
+    <a-plane color="#FFFFFF" width="1.52" height="0.76"
+             position="0 0.38 -0.12"
+             material="opacity: 0.12; side: double;"
+             rotation="0 0 0">
+    </a-plane>
+
+    <a-entity position="0 0.38 -0.1">
+      <a-box color="#FFFFFF" width="0.01" height="0.76" depth="0.01" position="-0.38 0 0" material="opacity:0.3"></a-box>
+      <a-box color="#FFFFFF" width="0.01" height="0.76" depth="0.01" position="0 0 0"    material="opacity:0.3"></a-box>
+      <a-box color="#FFFFFF" width="0.01" height="0.76" depth="0.01" position="0.38 0 0" material="opacity:0.3"></a-box>
+      <a-box color="#FFFFFF" width="1.52" height="0.01" depth="0.01" position="0 0.19 0"  material="opacity:0.3"></a-box>
+      <a-box color="#FFFFFF" width="1.52" height="0.01" depth="0.01" position="0 -0.19 0" material="opacity:0.3"></a-box>
+    </a-entity>
+
+    <a-box id="goalkeeper" color="#C8102E" width="0.25" height="0.5" depth="0.1"
+           position="0 0.25 -0.08"
+           animation="property: position; from: -0.4 0.25 -0.08; to: 0.4 0.25 -0.08; dur: 1500; dir: alternate; loop: true; easing: easeInOutSine;">
+    </a-box>
+    <a-text value="1" color="#FFFFFF" align="center" width="1"
+            position="0 0.38 -0.03"
+            animation="property: position; from: -0.4 0.38 -0.03; to: 0.4 0.38 -0.03; dur: 1500; dir: alternate; loop: true; easing: easeInOutSine;">
+    </a-text>
+
+    <a-sphere id="ball" color="#F5C518" radius="0.07"
+              position="0 0.07 0.4"
+              material="roughness: 0.3; metalness: 0.1">
+    </a-sphere>
+
+    <a-plane color="#F5C518" width="0.4" height="0.12"
+             position="0 1.0 0"
+             material="opacity: 0.85">
+    </a-plane>
+    <a-text value="FC KAIRAT" color="#000000" align="center" width="1.8"
+            position="0 1.0 0.01">
+    </a-text>
+
+  </a-entity>
+</a-scene>
+
+<div id="hud">
+
+  <div id="shot-tracker">
+    <div class="shot-dot" id="dot-0"></div>
+    <div class="shot-dot" id="dot-1"></div>
+    <div class="shot-dot" id="dot-2"></div>
+    <div class="shot-dot" id="dot-3"></div>
+    <div class="shot-dot" id="dot-4"></div>
+  </div>
+
+  <div id="goal-counter">
+    <div class="num" id="goal-num">0</div>
+    <div class="lbl">Goals</div>
+  </div>
+
+  <div id="scan-hint">
+    <p class="brand">🍫 Point at SNICKERS</p>
+    <p>Hold your camera over a SNICKERS bar to place the goal</p>
+  </div>
+
+  <div id="shot-zones">
+    <div class="zone" data-zone="top-left"    id="z-tl"></div>
+    <div class="zone" data-zone="top-center"  id="z-tc"></div>
+    <div class="zone" data-zone="top-right"   id="z-tr"></div>
+    <div class="zone" data-zone="mid-left"    id="z-ml"></div>
+    <div class="zone" data-zone="mid-center"  id="z-mc"></div>
+    <div class="zone" data-zone="mid-right"   id="z-mr"></div>
+    <div class="zone" data-zone="low-left"    id="z-ll"></div>
+    <div class="zone" data-zone="low-center"  id="z-lc"></div>
+    <div class="zone" data-zone="low-right"   id="z-lr"></div>
+  </div>
+
+  <div id="flash">
+    <span class="label" id="flash-text"></span>
+  </div>
+
+  <div id="session-end" style="display:none; pointer-events:all;">
+    <h2 id="end-title">Done!</h2>
+    <p id="end-subtitle">Sending result...</p>
+    <div class="loader"></div>
+  </div>
+
+</div>
+
+<script>
+
+const TOTAL_SHOTS = 5
+const GOALS_TO_WIN = 3
+
+let shotsLeft = TOTAL_SHOTS
+let goalsScored = 0
+let shotIndex = 0
+let targetVisible = false
+let gameOver = false
+
+const scanHint   = document.getElementById('scan-hint')
+const shotZones  = document.getElementById('shot-zones')
+const flash      = document.getElementById('flash')
+const flashText  = document.getElementById('flash-text')
+const goalNum    = document.getElementById('goal-num')
+const sessionEnd = document.getElementById('session-end')
+const endTitle   = document.getElementById('end-title')
+const endSub     = document.getElementById('end-subtitle')
+
+document.addEventListener('DOMContentLoaded', () => {
+  const scene = document.getElementById('ar-scene')
+
+  scene.addEventListener('arReady', () => {
+    console.log('MindAR ready — scanning for SNICKERS target')
+  })
+
+  const target = document.getElementById('ar-target')
+
+  target.addEventListener('targetFound', () => {
+    console.log('Target found!')
+    targetVisible = true
+    scanHint.classList.add('hidden')
+    positionShotZones()
+    shotZones.style.display = 'block'
+  })
+
+  target.addEventListener('targetLost', () => {
+    targetVisible = false
+    scanHint.classList.remove('hidden')
+    shotZones.style.display = 'none'
+  })
+})
+
+
+function positionShotZones() {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  const goalLeft   = vw * 0.20
+  const goalTop    = vh * 0.20
+  const goalWidth  = vw * 0.60
+  const goalHeight = vh * 0.50
+
+  shotZones.style.left   = goalLeft + 'px'
+  shotZones.style.top    = goalTop + 'px'
+  shotZones.style.width  = goalWidth + 'px'
+  shotZones.style.height = goalHeight + 'px'
+  shotZones.style.display = 'grid'
+  shotZones.style.gridTemplateColumns = 'repeat(3, 1fr)'
+  shotZones.style.gridTemplateRows    = 'repeat(3, 1fr)'
+  shotZones.style.gap = '2px'
+
+  document.querySelectorAll('.zone').forEach(z => {
+    z.style.width  = '100%'
+    z.style.height = '100%'
+  })
+}
+
+window.addEventListener('resize', () => {
+  if (targetVisible) positionShotZones()
+})
+
+
+document.querySelectorAll('.zone').forEach(zone => {
+  zone.addEventListener('click', () => handleShot(zone.dataset.zone))
+})
+
+function handleShot(zone) {
+  if (gameOver || !targetVisible) return
+
+  const gkCenterZones = ['mid-center', 'low-center', 'mid-left', 'mid-right']
+  const isGkZone = gkCenterZones.includes(zone)
+  const saveChance = isGkZone ? 0.55 : 0.30
+  const isGoal = Math.random() > saveChance
+
+  const dot = document.getElementById('dot-' + shotIndex)
+  if (dot) {
+    dot.classList.add(isGoal ? 'goal' : 'miss')
+    dot.textContent = isGoal ? '⚽' : '🧤'
+  }
+
+  if (isGoal) {
+    goalsScored++
+    goalNum.textContent = goalsScored
+    showFlash('GOAL!', 'goal-flash')
+    animateBallShot(zone)
+  } else {
+    showFlash('SAVED!', 'miss-flash')
+  }
+
+  shotIndex++
+  shotsLeft--
+
+  if (shotsLeft <= 0) {
+    setTimeout(endSession, 1200)
+  }
+}
+
+
+function animateBallShot(zone) {
+  const ball = document.getElementById('ball')
+  if (!ball) return
+
+  const zonePositions = {
+    'top-left':    '-0.55 0.65 -0.1',
+    'top-center':  '0 0.65 -0.1',
+    'top-right':   '0.55 0.65 -0.1',
+    'mid-left':    '-0.55 0.35 -0.1',
+    'mid-center':  '0 0.35 -0.1',
+    'mid-right':   '0.55 0.35 -0.1',
+    'low-left':    '-0.55 0.1 -0.1',
+    'low-center':  '0 0.1 -0.1',
+    'low-right':   '0.55 0.1 -0.1',
+  }
+  const target = zonePositions[zone] ?? '0 0.35 -0.1'
+
+  ball.setAttribute('animation__shot', `property: position; from: 0 0.07 0.4; to: ${target}; dur: 400; easing: easeInQuad`)
+  setTimeout(() => {
+    ball.removeAttribute('animation__shot')
+    ball.setAttribute('position', '0 0.07 0.4')
+  }, 800)
+}
+
+
+function showFlash(text, cls) {
+  flashText.textContent = text
+  flash.className = 'show ' + cls
+  setTimeout(() => { flash.className = '' }, 900)
+}
+
+function endSession() {
+  gameOver = true
+  shotZones.style.display = 'none'
+
+  endTitle.textContent = goalsScored >= GOALS_TO_WIN ? '🏆 ' + goalsScored + '/' + TOTAL_SHOTS + ' Goals!' : '😤 ' + goalsScored + '/' + TOTAL_SHOTS + ' Goals'
+  endSub.textContent = 'Saving result...'
+  sessionEnd.style.display = 'flex'
+
+  setTimeout(() => {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'AR_SESSION_COMPLETE',
+        goalsScored,
+        totalShots: TOTAL_SHOTS,
+      }, '*')
+    }
+  }, 1000)
+}
+</script>
+</body>
+</html>
