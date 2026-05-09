@@ -37,27 +37,7 @@ const nextConfig = {
         headers: [
           { key: 'X-Frame-Options', value: 'ALLOWALL' },
           { key: 'Content-Security-Policy', value: "frame-ancestors *" },
-        ],
-      },
-      {
-        source: '/ar-scene.html',
-        headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://aframe.io",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://cdn.jsdelivr.net",
-              "media-src 'self' blob:",
-              "connect-src 'self' https://cdn.jsdelivr.net blob:",
-              "worker-src 'self' blob:",
-              "camera *",
-            ].join('; '),
-          },
-          { key: 'Feature-Policy', value: 'camera *' },
-          { key: 'Permissions-Policy', value: 'camera=*' },
-          { key: 'X-Frame-Options', value: 'ALLOWALL' },
+          { key: 'Permissions-Policy', value: 'camera=*, microphone=()' },
         ],
       },
     ]
